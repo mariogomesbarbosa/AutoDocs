@@ -84,28 +84,6 @@ async function generateDocumentation() {
   propsFrame.paddingRight = 40;
   propsFrame.itemSpacing = 24;
 
-  // 1. Lado Esquerdo - Extração Hierárquica (Estrutura, Icons, Labels)
-  let badgeIndex = 1;
-  const targetForSpecs = node.type === 'COMPONENT_SET' ? node.defaultVariant : node;
-
-  await appendSpecGroup(propsFrame, badgeIndex, "Estrutura", targetForSpecs);
-  const mainBadge = badgeIndex++;
-
-  let leftBadge = -1;
-  let rightBadge = -1;
-
-  if ('children' in targetForSpecs) {
-    for (const child of targetForSpecs.children) {
-      if (child.type === 'TEXT') {
-        leftBadge = leftBadge === -1 ? badgeIndex : leftBadge;
-        await appendSpecGroup(propsFrame, badgeIndex++, "Label", child);
-      } else if (child.type === 'INSTANCE' || child.type === 'VECTOR' || child.type === 'BOOLEAN_OPERATION') {
-        rightBadge = rightBadge === -1 ? badgeIndex : rightBadge;
-        await appendSpecGroup(propsFrame, badgeIndex++, "Icon", child);
-      }
-    }
-  }
-
   // Lado Direito - Preview (Card Branco)
   const previewFrame = figma.createFrame();
   previewFrame.name = "Preview";
@@ -120,79 +98,9 @@ async function generateDocumentation() {
   previewFrame.paddingLeft = 60;
   previewFrame.paddingRight = 60;
 
-  // Clonar Componente para o Preview
-  let clone;
-  if (node.type === 'COMPONENT_SET') {
-    clone = node.defaultVariant.createInstance();
-  } else if (node.type === 'COMPONENT') {
-    clone = node.createInstance();
-  } else {
-    clone = node.clone();
-  }
-
-  // Criar Canvas absoluto para permitir sobreposição de Pinos Livres
-  const canvasFrame = figma.createFrame();
-  canvasFrame.name = "Canvas";
-  canvasFrame.fills = [];
-
-  const pad = 60;
-  clone.x = pad;
-  clone.y = pad;
-  canvasFrame.appendChild(clone);
-  canvasFrame.resize(clone.width + pad * 2, clone.height + pad * 2);
-
-  // Lógica de Pintar Pinos (Specs) nas laterais do Componente Isolado
-  const drawPin = (num: number, position: 'top' | 'left' | 'right') => {
-    const pinFrame = figma.createFrame();
-    pinFrame.resize(24, 24);
-    pinFrame.cornerRadius = 12;
-    pinFrame.fills = [figma.util.solidPaint("#1A1A1A")];
-    pinFrame.layoutMode = "VERTICAL";
-    pinFrame.primaryAxisAlignItems = "CENTER";
-    pinFrame.counterAxisAlignItems = "CENTER";
-
-    const pinText = figma.createText();
-    pinText.characters = num.toString();
-    pinText.fontSize = 12;
-    pinText.fontName = { family: "Inter", style: "Bold" };
-    pinText.fills = [figma.util.solidPaint("#FFFFFF")];
-    pinFrame.appendChild(pinText);
-
-    const line = figma.createLine();
-    line.strokes = [figma.util.solidPaint("#1A1A1A")];
-    line.strokeWeight = 1;
-
-    if (position === 'top') {
-      pinFrame.x = pad + clone.width / 2 - 12;
-      pinFrame.y = pad - 40;
-      line.x = pad + clone.width / 2;
-      line.y = pad - 16;
-      line.resize(16, 0);
-      line.rotation = -90;
-    } else if (position === 'left') {
-      pinFrame.x = pad - 40;
-      pinFrame.y = pad + clone.height / 2 - 12;
-      line.x = pad - 16;
-      line.y = pad + clone.height / 2;
-      line.resize(16, 0);
-    } else if (position === 'right') {
-      pinFrame.x = pad + clone.width + 16;
-      pinFrame.y = pad + clone.height / 2 - 12;
-      line.x = pad + clone.width;
-      line.y = pad + clone.height / 2;
-      line.resize(16, 0);
-    }
-
-    canvasFrame.appendChild(line);
-    canvasFrame.appendChild(pinFrame);
-  };
-
-  // Instanciar Pinos Baseados na árvore percorrida
-  drawPin(mainBadge, 'top');
-  if (leftBadge !== -1) drawPin(leftBadge, 'left');
-  if (rightBadge !== -1) drawPin(rightBadge, 'right');
-
-  previewFrame.appendChild(canvasFrame);
+  // 1. Extração Hierárquica e Pintura do Preview
+  const targetForSpecs = node.type === 'COMPONENT_SET' ? node.defaultVariant : node;
+  await renderSpecsAndPreview(propsFrame, previewFrame, targetForSpecs, 60);
 
   // Adicionar lados ao container "Estrutura"
   estruturaContent.appendChild(propsFrame);
@@ -202,8 +110,14 @@ async function generateDocumentation() {
   docFrame.appendChild(sectionEstrutura);
 
   // NOVIDADE: GERAR "ESTADOS" E "VARIANTES"
+  let compSet: ComponentSetNode | null = null;
   if (node.type === 'COMPONENT_SET') {
-    const compSet = node as ComponentSetNode;
+    compSet = node;
+  } else if (node.type === 'COMPONENT' && node.parent && node.parent.type === 'COMPONENT_SET') {
+    compSet = node.parent;
+  }
+
+  if (compSet) {
     const propriedades = compSet.componentPropertyDefinitions;
 
     // Arrays para guardar as propriedades classificadas
@@ -211,13 +125,17 @@ async function generateDocumentation() {
     const propsVariante: string[] = [];
 
     // Palavras-chave que inferem um estado (adicionar em PT e EN)
-    const keywordsEstado = ['state', 'estado', 'hover', 'pressed', 'active', 'disabled', 'focus'];
+    const keywordsEstado = ['state', 'estado', 'hover', 'pressed', 'active', 'disabled', 'focus', 'loading'];
 
     for (const key in propriedades) {
       if (propriedades[key].type === 'VARIANT') {
         const cleanKey = key.split('#')[0].toLowerCase();
-        // Verificar se é Estado ou Variante
-        const isEstado = keywordsEstado.some(keyword => cleanKey.includes(keyword));
+        const options = propriedades[key].variantOptions || [];
+        
+        // Verificar se é Estado ou Variante checando o NOME do parâmetro e também seus VALORES
+        const isEstado = keywordsEstado.some(keyword => cleanKey.includes(keyword)) || 
+                         options.some(opt => keywordsEstado.some(keyword => opt.toLowerCase().includes(keyword)));
+        
         if (isEstado) {
           propsEstado.push(key);
         } else {
@@ -233,17 +151,15 @@ async function generateDocumentation() {
 
       for (const propKey of propKeys) {
         const cleanKey = propKey.split('#')[0];
-        const defaultValue = propriedades[propKey].defaultValue;
         // As opções válidas para esta propriedade
         const options = propriedades[propKey].variantOptions || [];
 
         for (const optionStr of options) {
-          // Só desenhar variações que não sejam o padrão/default (Pois a default já está na 'Estrutura')
-          if (optionStr !== defaultValue && optionStr.toLowerCase() !== 'default') {
-            adicionouConteudo = true;
+          // Documentamos todas as variações agora, incluindo as default (como Solicitado)
+          adicionouConteudo = true;
 
-            // Subtítulo (Nome da opção. ex: "Hover" ou "Small")
-            const titleRow = figma.createText();
+          // Subtítulo (Nome da opção. ex: "Hover" ou "Small")
+          const titleRow = figma.createText();
             titleRow.characters = optionStr;
             titleRow.fontSize = 14;
             titleRow.fontName = { family: "Inter", style: "Bold" };
@@ -263,10 +179,12 @@ async function generateDocumentation() {
 
             // Encontrar o componente filho (variante) dentro do Set que corresponda
             // a ter esta propriedade === optionStr
+            const targetNameStr = `${cleanKey}=${optionStr}`.toLowerCase();
+            const targetNameRegex = new RegExp(`(^|,\\s*)${cleanKey}=${optionStr}(,|$)`, 'i');
+            
             const varianteTarget = compSet.children.find(child => {
               if (child.type === 'COMPONENT') {
-                const childProps = (child as any).componentPropertyReferences || {};
-                return child.name.includes(`${cleanKey}=${optionStr}`);
+                return child.name.toLowerCase().includes(targetNameStr) || targetNameRegex.test(child.name);
               }
               return false;
             });
@@ -283,20 +201,6 @@ async function generateDocumentation() {
             paramFrame.paddingLeft = 24;
             paramFrame.paddingRight = 24;
 
-            const paramText = figma.createText();
-            // Se encontrou a variante específica, extraimos dados dela
-            paramText.characters = varianteTarget
-              ? await extrairPropriedadesBasicas(varianteTarget)
-              : `${cleanKey}: ${optionStr}`;
-            paramText.fontSize = 12;
-            paramText.fontName = { family: "Inter", style: "Regular" };
-            paramText.fills = [figma.util.solidPaint("#333333")];
-            // Configurando para preencher horizontalmente
-            paramText.layoutAlign = "STRETCH";
-            paramText.textAutoResize = "HEIGHT";
-            renderHighlightText(paramText, paramText.characters);
-            paramFrame.appendChild(paramText);
-
             // Card Direito (Preview)
             const prevFrame = figma.createFrame();
             prevFrame.name = "Preview";
@@ -311,9 +215,18 @@ async function generateDocumentation() {
             prevFrame.paddingLeft = 40;
             prevFrame.paddingRight = 40;
 
-            if (varianteTarget && varianteTarget.type === 'COMPONENT') {
-              prevFrame.appendChild(varianteTarget.createInstance());
+            if (varianteTarget && (varianteTarget.type === 'COMPONENT' || varianteTarget.type === 'COMPONENT_SET')) {
+              await renderSpecsAndPreview(paramFrame, prevFrame, varianteTarget, 40);
             } else {
+              const paramText = figma.createText();
+              paramText.characters = `${cleanKey}: ${optionStr}`;
+              paramText.fontSize = 12;
+              paramText.fontName = { family: "Inter", style: "Regular" };
+              paramText.fills = [figma.util.solidPaint("#333333")];
+              paramText.layoutAlign = "STRETCH";
+              paramText.textAutoResize = "HEIGHT";
+              paramFrame.appendChild(paramText);
+
               const fallbackText = figma.createText();
               fallbackText.characters = "Pré-visualização não encontrada.";
               fallbackText.fontSize = 12;
@@ -328,9 +241,9 @@ async function generateDocumentation() {
             if ('layoutSizingHorizontal' in rowContent) {
               (rowContent as any).layoutSizingHorizontal = "FILL";
             }
-          }
-        }
-      }
+          // } foi removida a chave que fechava o antigo IF
+        } // fecha options loop
+      } // fecha propKeys loop
 
       if (adicionouConteudo) {
         docFrame.appendChild(section);
@@ -404,7 +317,7 @@ async function getTokenName(node: SceneNode, propertyName: string, fallbackValue
     if (boundVars[propertyName] && boundVars[propertyName].type === 'VARIABLE_ALIAS') {
       const variable = await figma.variables.getVariableByIdAsync(boundVars[propertyName].id);
       if (variable) {
-        return variable.name;
+        return variable.name.split('/').pop() || variable.name;
       }
     }
   }
@@ -453,7 +366,8 @@ async function extrairPropriedadesBasicas(node: SceneNode): Promise<string> {
         const varId = fillsVars[0].id;
         const variable = await figma.variables.getVariableByIdAsync(varId);
         if (variable) {
-          props += `background-color: ${variable.name}\n`;
+          const shortName = variable.name.split('/').pop() || variable.name;
+          props += `background-color: ${shortName}\n`;
         }
       }
     }
@@ -527,7 +441,8 @@ async function extrairPropriedadesTexto(node: TextNode): Promise<string> {
         const varId = fillsVars[0].id;
         const variable = await figma.variables.getVariableByIdAsync(varId);
         if (variable) {
-          props += `color: ${variable.name}\n`;
+          const shortName = variable.name.split('/').pop() || variable.name;
+          props += `color: ${shortName}\n`;
         }
       }
     } else {
@@ -609,6 +524,104 @@ async function appendSpecGroup(parentFrame: FrameNode, index: number, title: str
   groupFrame.appendChild(propsText);
 
   parentFrame.appendChild(groupFrame);
+}
+
+async function renderSpecsAndPreview(
+  propsFrame: FrameNode,
+  previewFrame: FrameNode,
+  targetNode: SceneNode,
+  pad: number = 60
+) {
+  let badgeIndex = 1;
+
+  await appendSpecGroup(propsFrame, badgeIndex, "Estrutura", targetNode);
+  const mainBadge = badgeIndex++;
+
+  let leftBadge = -1;
+  let rightBadge = -1;
+
+  if ('children' in targetNode) {
+    for (const child of (targetNode as any).children) {
+      if (child.type === 'TEXT') {
+        leftBadge = leftBadge === -1 ? badgeIndex : leftBadge;
+        await appendSpecGroup(propsFrame, badgeIndex++, "Label", child);
+      } else if (child.type === 'INSTANCE' || child.type === 'VECTOR' || child.type === 'BOOLEAN_OPERATION') {
+        rightBadge = rightBadge === -1 ? badgeIndex : rightBadge;
+        await appendSpecGroup(propsFrame, badgeIndex++, "Icon", child);
+      }
+    }
+  }
+
+  let clone;
+  if (targetNode.type === 'COMPONENT_SET') {
+    clone = (targetNode as ComponentSetNode).defaultVariant.createInstance();
+  } else if (targetNode.type === 'COMPONENT') {
+    clone = (targetNode as ComponentNode).createInstance();
+  } else {
+    clone = targetNode.clone();
+  }
+
+  const canvasFrame = figma.createFrame();
+  canvasFrame.name = "Canvas";
+  canvasFrame.fills = [];
+
+  const cloneWidth = clone.width;
+  const cloneHeight = clone.height;
+  clone.x = pad;
+  clone.y = pad;
+  canvasFrame.appendChild(clone);
+  canvasFrame.resize(cloneWidth + pad * 2, cloneHeight + pad * 2);
+
+  const drawPin = (num: number, position: 'top' | 'left' | 'right') => {
+    const pinFrame = figma.createFrame();
+    pinFrame.resize(24, 24);
+    pinFrame.cornerRadius = 12;
+    pinFrame.fills = [figma.util.solidPaint("#1A1A1A")];
+    pinFrame.layoutMode = "VERTICAL";
+    pinFrame.primaryAxisAlignItems = "CENTER";
+    pinFrame.counterAxisAlignItems = "CENTER";
+
+    const pinText = figma.createText();
+    pinText.characters = num.toString();
+    pinText.fontSize = 12;
+    pinText.fontName = { family: "Inter", style: "Bold" };
+    pinText.fills = [figma.util.solidPaint("#FFFFFF")];
+    pinFrame.appendChild(pinText);
+
+    const line = figma.createLine();
+    line.strokes = [figma.util.solidPaint("#1A1A1A")];
+    line.strokeWeight = 1;
+
+    if (position === 'top') {
+      pinFrame.x = pad + cloneWidth / 2 - 12;
+      pinFrame.y = pad - 40;
+      line.x = pad + cloneWidth / 2;
+      line.y = pad - 16;
+      line.resize(16, 0);
+      line.rotation = -90;
+    } else if (position === 'left') {
+      pinFrame.x = pad - 40;
+      pinFrame.y = pad + cloneHeight / 2 - 12;
+      line.x = pad - 16;
+      line.y = pad + cloneHeight / 2;
+      line.resize(16, 0);
+    } else if (position === 'right') {
+      pinFrame.x = pad + cloneWidth + 16;
+      pinFrame.y = pad + cloneHeight / 2 - 12;
+      line.x = pad + cloneWidth;
+      line.y = pad + cloneHeight / 2;
+      line.resize(16, 0);
+    }
+
+    canvasFrame.appendChild(line);
+    canvasFrame.appendChild(pinFrame);
+  };
+
+  drawPin(mainBadge, 'top');
+  if (leftBadge !== -1) drawPin(leftBadge, 'left');
+  if (rightBadge !== -1) drawPin(rightBadge, 'right');
+
+  previewFrame.appendChild(canvasFrame);
 }
 
 generateDocumentation();
