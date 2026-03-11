@@ -78,10 +78,10 @@ async function generateDocumentation() {
   propsFrame.cornerRadius = 8;
   propsFrame.layoutMode = "VERTICAL";
   propsFrame.layoutGrow = 1; // Divide espaço com o preview
-  propsFrame.paddingTop = 40;
-  propsFrame.paddingBottom = 40;
-  propsFrame.paddingLeft = 40;
-  propsFrame.paddingRight = 40;
+  propsFrame.paddingTop = 24;
+  propsFrame.paddingBottom = 24;
+  propsFrame.paddingLeft = 24;
+  propsFrame.paddingRight = 24;
   propsFrame.itemSpacing = 24;
 
   // 1. Lado Esquerdo - Extração Hierárquica (Estrutura, Icons, Labels)
@@ -113,12 +113,13 @@ async function generateDocumentation() {
   previewFrame.cornerRadius = 8;
   previewFrame.layoutMode = "VERTICAL";
   previewFrame.layoutGrow = 1;
+  previewFrame.layoutAlign = "STRETCH";
   previewFrame.primaryAxisAlignItems = "CENTER";
   previewFrame.counterAxisAlignItems = "CENTER";
-  previewFrame.paddingTop = 60;
-  previewFrame.paddingBottom = 60;
-  previewFrame.paddingLeft = 60;
-  previewFrame.paddingRight = 60;
+  previewFrame.paddingTop = 24;
+  previewFrame.paddingBottom = 24;
+  previewFrame.paddingLeft = 24;
+  previewFrame.paddingRight = 24;
 
   // Clonar Componente para o Preview
   let clone;
@@ -128,6 +129,14 @@ async function generateDocumentation() {
     clone = node.createInstance();
   } else {
     clone = node.clone();
+  }
+
+  // Escalar clone base se for muito extasiado
+  const MAX_W = 340;
+  const MAX_H = 340;
+  if (clone.width > MAX_W || clone.height > MAX_H) {
+    const factor = Math.min(MAX_W / clone.width, MAX_H / clone.height);
+    if ('rescale' in clone) clone.rescale(factor);
   }
 
   // Criar Canvas absoluto para permitir sobreposição de Pinos Livres
@@ -285,9 +294,11 @@ async function generateDocumentation() {
 
             const paramText = figma.createText();
             // Se encontrou a variante específica, extraimos dados dela
-            paramText.characters = varianteTarget
+            let props = varianteTarget
               ? await extrairPropriedadesBasicas(varianteTarget)
               : `${cleanKey}: ${optionStr}`;
+
+            paramText.characters = props.trim();
             paramText.fontSize = 12;
             paramText.fontName = { family: "Inter", style: "Regular" };
             paramText.fills = [figma.util.solidPaint("#333333")];
@@ -304,15 +315,21 @@ async function generateDocumentation() {
             prevFrame.cornerRadius = 8;
             prevFrame.layoutMode = "VERTICAL";
             prevFrame.layoutGrow = 1;
+            prevFrame.layoutAlign = "STRETCH";
             prevFrame.primaryAxisAlignItems = "CENTER";
             prevFrame.counterAxisAlignItems = "CENTER";
-            prevFrame.paddingTop = 40;
-            prevFrame.paddingBottom = 40;
-            prevFrame.paddingLeft = 40;
-            prevFrame.paddingRight = 40;
+            prevFrame.paddingTop = 24;
+            prevFrame.paddingBottom = 24;
+            prevFrame.paddingLeft = 24;
+            prevFrame.paddingRight = 24;
 
             if (varianteTarget && varianteTarget.type === 'COMPONENT') {
-              prevFrame.appendChild(varianteTarget.createInstance());
+              const varClone = varianteTarget.createInstance();
+              if (varClone.width > MAX_W || varClone.height > MAX_H) {
+                const factor = Math.min(MAX_W / varClone.width, MAX_H / varClone.height);
+                if ('rescale' in varClone) varClone.rescale(factor);
+              }
+              prevFrame.appendChild(varClone);
             } else {
               const fallbackText = figma.createText();
               fallbackText.characters = "Pré-visualização não encontrada.";
@@ -633,7 +650,9 @@ async function appendSpecGroup(parentFrame: FrameNode, index: number, title: str
     propsString += await extrairPropriedadesTexto(targetNode as TextNode);
   }
 
-  if (propsString.trim().length === 0) {
+  propsString = propsString.trim();
+
+  if (propsString.length === 0) {
     propsString = "Nenhuma propriedade encontrada.";
   }
 
