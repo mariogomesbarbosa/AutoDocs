@@ -1255,15 +1255,25 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
   const createTokenList = (title: string, list: {name: string, value: string}[]) => {
     if (!list || list.length === 0) return null;
     
-    const card = createFrame(`Tokens-${title}`, {
+    // Container externo para as sub-sessões
+    const container = createFrame(`Tokens-${title}-Group`, {
       direction: 'VERTICAL',
-      gap: 12,
       layoutAlign: 'STRETCH'
     });
     
-    // Título da categoria (menor e sem card branco em volta por enquanto, para combinar com o print)
-    const cardTitle = createText(title, 14, 'Bold', COLORS.dark);
-    card.appendChild(cardTitle);
+    // O Card Branco
+    const card = createFrame(`Tokens-${title}-Card`, {
+      direction: 'VERTICAL',
+      fill: COLORS.white,
+      radius: 12,
+      padding: 24,
+      gap: 20, // Espaço entre o título e a lista de chips
+      layoutAlign: 'STRETCH'
+    });
+
+    // Título da categoria (dentro do card agora)
+    const categoryTitle = createText(title, 16, 'Bold', COLORS.dark);
+    card.appendChild(categoryTitle);
 
     const listFrame = createFrame('List', {
       direction: 'HORIZONTAL',
@@ -1280,8 +1290,8 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
         direction: 'HORIZONTAL',
         fill: '#F5F5F7',
         radius: 6,
-        padding: [6, 10, 6, 10],
-        gap: 8,
+        padding: [6, 12, 6, 12],
+        gap: 10,
         counterAlign: 'CENTER'
       });
       chip.strokes = [figma.util.solidPaint('#EBEBEB')];
@@ -1290,20 +1300,19 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
       // Color Preview para category Color
       if (token.value.startsWith('#')) {
          const colorSwatch = figma.createEllipse();
-         colorSwatch.resize(12, 12);
+         colorSwatch.resize(14, 14);
          colorSwatch.fills = [figma.util.solidPaint(token.value.split(' ')[0])];
          colorSwatch.strokes = [figma.util.solidPaint('rgba(0,0,0,0.1)')];
          colorSwatch.strokeWeight = 1;
          chip.appendChild(colorSwatch);
       }
 
-      // Compact Content: Name + Value
+      // Content: Name + Value
       const chipText = figma.createText();
       chipText.characters = `${token.name} — ${token.value}`;
-      chipText.fontSize = 12;
+      chipText.fontSize = 13;
       chipText.fontName = { family: 'Inter', style: 'Medium' };
       
-      // Aplicar cores diferentes para nome e valor no chip
       const namePart = token.name;
       const separator = ' — ';
       chipText.setRangeFills(0, namePart.length, [figma.util.solidPaint(COLORS.token)]);
@@ -1315,12 +1324,13 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
     }
 
     card.appendChild(listFrame);
-    return card;
+    container.appendChild(card);
+    return container;
   };
 
   const grids = createFrame('Tokens-Stack', {
     direction: 'VERTICAL',
-    gap: 32,
+    gap: 16,
     layoutAlign: 'STRETCH'
   });
   grids.primaryAxisSizingMode = 'AUTO';
