@@ -502,10 +502,13 @@ async function extractComponentData(node: ComponentNode | ComponentSetNode | Ins
           const rawValues = Object.values(v.valuesByMode);
           let rawVal = rawValues.length > 0 ? rawValues[0] : null;
           
-          if (rawVal && typeof rawVal === 'object' && 'type' in rawVal && rawVal.type === 'VARIABLE_ALIAS') {
+          // Resolução recursiva de aliases
+          while (rawVal && typeof rawVal === 'object' && 'type' in rawVal && (rawVal as any).type === 'VARIABLE_ALIAS') {
              const aliasVar = await figma.variables.getVariableByIdAsync((rawVal as VariableAlias).id);
              if (aliasVar) {
-               rawVal = Object.values(aliasVar.valuesByMode)[0];
+                rawVal = Object.values(aliasVar.valuesByMode)[0];
+             } else {
+                break;
              }
           }
 
