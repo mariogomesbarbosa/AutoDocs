@@ -737,22 +737,23 @@ function renderWhenToUse(parentFrame: FrameNode, aiDocs: AIDocumentation) {
 // SEÇÃO: ANATOMIA
 // ============================================================
 
-async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentData, aiDocs: AIDocumentation) {
+async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentData, aiDocs: AIDocumentation, originNode: SceneNode) {
   const section = createSectionFrame('Anatomia');
   section.layoutAlign = 'STRETCH';
+  parentFrame.appendChild(section);
 
   const targetNode = componentData.nodeType === 'COMPONENT_SET'
-    ? (figma.currentPage.selection[0] as ComponentSetNode).defaultVariant
-    : figma.currentPage.selection[0] as ComponentNode | InstanceNode;
+    ? (originNode as ComponentSetNode).defaultVariant
+    : originNode as ComponentNode | InstanceNode;
 
   // Row: Preview + Lista
   const row = createFrame('Anatomia-Row', {
     direction: 'HORIZONTAL',
     gap: 24,
-    layoutAlign: 'STRETCH',
   });
-  (row as FrameNode).primaryAxisSizingMode = 'FIXED';
+  section.appendChild(row); // Anexa antes de configurar layout complexo
   row.layoutAlign = 'STRETCH';
+  (row as FrameNode).primaryAxisSizingMode = 'FIXED';
 
   // Preview com pinos
   const previewCard = createFrame('Anatomia-Preview', {
@@ -875,18 +876,18 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
 
   row.appendChild(listCard);
   section.appendChild(row);
-  parentFrame.appendChild(section);
 }
 
 // ============================================================
 // SEÇÃO: VARIANTES
 // ============================================================
 
-async function renderVariants(parentFrame: FrameNode, componentData: ComponentData, aiDocs: AIDocumentation) {
+async function renderVariants(parentFrame: FrameNode, componentData: ComponentData, aiDocs: AIDocumentation, originNode: SceneNode) {
   if (aiDocs.variants.length === 0) return;
 
   const section = createSectionFrame('Variantes');
   section.layoutAlign = 'STRETCH';
+  parentFrame.appendChild(section);
 
   // Descrição geral
   const intro = createText(
@@ -899,42 +900,43 @@ async function renderVariants(parentFrame: FrameNode, componentData: ComponentDa
   intro.textAutoResize = 'HEIGHT';
   section.appendChild(intro);
 
-  // Grid de variantes
-  const grid = createFrame('Variantes-Grid', {
-    direction: 'HORIZONTAL',
+  // Stack vertical de variantes (antes era um grid horizontal)
+  const stack = createFrame('Variantes-Stack', {
+    direction: 'VERTICAL',
     gap: 16,
     layoutAlign: 'STRETCH',
   });
-  (grid as FrameNode).primaryAxisSizingMode = 'FIXED';
-  grid.layoutAlign = 'STRETCH';
-  grid.counterAxisAlignItems = 'MIN';
+  stack.primaryAxisSizingMode = 'AUTO';
 
-  const compSet = figma.currentPage.selection[0] as ComponentSetNode;
+  const compSet = originNode as ComponentSetNode;
 
   for (const varInfo of aiDocs.variants) {
-    const card = createFrame(`Variante-${varInfo.name}`, {
-      direction: 'VERTICAL',
-      fill: COLORS.white,
-      radius: 12,
+    // Row da variante: Preview (L) + Texto (R)
+    const variantRow = createFrame(`Variante-${varInfo.name}`, {
+      direction: 'HORIZONTAL',
       gap: 16,
-      layoutGrow: 1,
-      layoutAlign: 'STRETCH',
+      counterAlign: 'MIN',
     });
+    stack.appendChild(variantRow); // ANEXA PRIMEIRO
+    variantRow.layoutAlign = 'STRETCH';
+    variantRow.primaryAxisSizingMode = 'AUTO';
+    (variantRow as any).layoutSizingHorizontal = 'FILL';
 
-    // Preview
+    // 1. Preview Area (Lado Esquerdo)
     const previewArea = createFrame(`Preview-${varInfo.name}`, {
       direction: 'VERTICAL',
-      fill: '#F5F5F7',
+      fill: '#E9E9E9',
       radius: 8,
-      padding: 28,
+      padding: 32,
       primaryAlign: 'CENTER',
       counterAlign: 'CENTER',
-      layoutAlign: 'STRETCH',
+      layoutAlign: 'STRETCH', // Garante que estique para preencher a altura se necessário
     });
-    (previewArea as FrameNode).primaryAxisSizingMode = 'FIXED';
-    previewArea.resize(previewArea.width || 1, 120);
+    previewArea.resize(440, 320); // Tamanho fixo para o preview side
+    previewArea.counterAxisSizingMode = 'FIXED';
+    previewArea.primaryAxisSizingMode = 'FIXED';
 
-    // Encontrar componente pelo nome da variante
+    // Encontrar e clonar componente
     if (componentData.nodeType === 'COMPONENT_SET' && compSet?.type === 'COMPONENT_SET') {
       const variantNode = compSet.children.find(c =>
         c.type === 'COMPONENT' && c.name.toLowerCase().includes(varInfo.name.toLowerCase())
@@ -942,57 +944,61 @@ async function renderVariants(parentFrame: FrameNode, componentData: ComponentDa
 
       if (variantNode) {
         const inst = variantNode.createInstance();
-        const MAX = 120;
-        if (inst.width > MAX || inst.height > MAX) {
-          const f = Math.min(MAX / inst.width, MAX / inst.height);
+        const MAXW = 380;
+        const MAXH = 260;
+        if (inst.width > MAXW || inst.height > MAXH) {
+          const f = Math.min(MAXW / inst.width, MAXH / inst.height);
           if ('rescale' in inst) inst.rescale(f);
         }
         previewArea.appendChild(inst);
       } else {
-        const fallback = createText(varInfo.name, 13, 'Medium', COLORS.mediumGray);
+        const fallback = createText(varInfo.name, 14, 'Medium', COLORS.mediumGray);
         previewArea.appendChild(fallback);
       }
     }
 
-    card.appendChild(previewArea);
-
-    // Texto
+    // 2. Text Area (Lado Direito)
     const textArea = createFrame(`Text-${varInfo.name}`, {
       direction: 'VERTICAL',
-      padding: [0, 20, 20, 20],
-      gap: 6,
-      layoutAlign: 'STRETCH',
+      fill: '#FFFFFF', // Nova cor solicitada (padrão branco)
+      radius: 8,       // Novo radius solicitado
+      padding: 40,
+      gap: 16,
+      layoutGrow: 1,   // Ocupa o restante do espaço
+      primaryAlign: 'CENTER',
     });
+    textArea.layoutAlign = 'STRETCH';
 
-    const varName = createText(varInfo.name, 15, 'Bold', COLORS.dark);
+    const varName = createText(varInfo.name, 20, 'Bold', COLORS.dark);
     varName.layoutAlign = 'STRETCH';
     textArea.appendChild(varName);
 
-    const varDesc = createText(varInfo.description, 13, 'Regular', COLORS.mediumGray);
+    const varDesc = createText(varInfo.description, 15, 'Regular', COLORS.mediumGray);
     varDesc.layoutAlign = 'STRETCH';
     varDesc.textAutoResize = 'HEIGHT';
-    varDesc.lineHeight = { value: 150, unit: 'PERCENT' };
+    varDesc.lineHeight = { value: 160, unit: 'PERCENT' };
     textArea.appendChild(varDesc);
 
-    card.appendChild(textArea);
-    grid.appendChild(card);
+    variantRow.appendChild(previewArea);
+    variantRow.appendChild(textArea);
+    stack.appendChild(variantRow);
   }
 
-  section.appendChild(grid);
-  parentFrame.appendChild(section);
+  section.appendChild(stack);
 }
 
 // ============================================================
 // SEÇÃO: ESTADOS
 // ============================================================
 
-async function renderStates(parentFrame: FrameNode, componentData: ComponentData, aiDocs: AIDocumentation) {
+async function renderStates(parentFrame: FrameNode, componentData: ComponentData, aiDocs: AIDocumentation, originNode: SceneNode) {
   if (componentData.states.length === 0) return;
 
   const section = createSectionFrame('Estados');
   section.layoutAlign = 'STRETCH';
+  parentFrame.appendChild(section);
 
-  const compSet = figma.currentPage.selection[0] as ComponentSetNode;
+  const compSet = originNode as ComponentSetNode;
 
   for (const stateGroup of componentData.states) {
     // Card branco englobando o grupo
@@ -1002,8 +1008,9 @@ async function renderStates(parentFrame: FrameNode, componentData: ComponentData
       radius: 12,
       padding: 28,
       gap: 20,
-      layoutAlign: 'STRETCH',
     });
+    section.appendChild(groupCard); // ANEXA PRIMEIRO
+    groupCard.layoutAlign = 'STRETCH';
 
     // Título do grupo
     const groupTitle = createText(stateGroup.variantName, 15, 'Bold', COLORS.dark);
@@ -1066,8 +1073,6 @@ async function renderStates(parentFrame: FrameNode, componentData: ComponentData
 
     section.appendChild(groupCard);
   }
-
-  parentFrame.appendChild(section);
 }
 
 // ============================================================
@@ -1093,8 +1098,9 @@ async function renderHierarchy(parentFrame: FrameNode, componentData: ComponentD
       radius: 12,
       padding: 28,
       gap: 16,
-      layoutAlign: 'STRETCH',
     });
+    section.appendChild(subCard); // ANEXA PRIMEIRO
+    subCard.layoutAlign = 'STRETCH';
 
     const subTitle = createText('Tamanho vs. Contexto', 16, 'Bold', COLORS.dark);
     subCard.appendChild(subTitle);
@@ -1183,8 +1189,9 @@ function renderApplicationRules(parentFrame: FrameNode, aiDocs: AIDocumentation)
     padding: 28,
     gap: 16,
     layoutGrow: 1,
-    layoutAlign: 'STRETCH',
   });
+  row.appendChild(doCard); // ANEXA PRIMEIRO
+  doCard.layoutAlign = 'STRETCH';
   doCard.strokes = [figma.util.solidPaint('#BBF7D0')];
   doCard.strokeWeight = 1;
 
@@ -1207,8 +1214,9 @@ function renderApplicationRules(parentFrame: FrameNode, aiDocs: AIDocumentation)
     padding: 28,
     gap: 16,
     layoutGrow: 1,
-    layoutAlign: 'STRETCH',
   });
+  row.appendChild(dontCard); // ANEXA PRIMEIRO
+  dontCard.layoutAlign = 'STRETCH';
   dontCard.strokes = [figma.util.solidPaint('#FECDD3')];
   dontCard.strokeWeight = 1;
 
@@ -1241,6 +1249,7 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
 
   const section = createSectionFrame('Tokens');
   section.layoutAlign = 'STRETCH';
+  parentFrame.appendChild(section);
   
   const intro = createText(
     'Variáveis e tokens de design aplicados na construção deste componente e suas variantes.',
@@ -1253,6 +1262,7 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
   section.appendChild(intro);
 
   const createTokenList = (title: string, list: {name: string, value: string}[]) => {
+    // ... logic remains same inside ...
     if (!list || list.length === 0) return null;
     
     // Container externo para as sub-sessões
@@ -1331,8 +1341,9 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
   const grids = createFrame('Tokens-Stack', {
     direction: 'VERTICAL',
     gap: 16,
-    layoutAlign: 'STRETCH'
   });
+  section.appendChild(grids); // ANEXA PRIMEIRO
+  grids.layoutAlign = 'STRETCH';
   grids.primaryAxisSizingMode = 'AUTO';
 
   const sizeCard = createTokenList('Tamanhos', tokens.size);
@@ -1345,8 +1356,6 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
   if (typeCard) grids.appendChild(typeCard);
 
   section.appendChild(grids);
-  
-  parentFrame.appendChild(section);
 }
 
 // ============================================================
@@ -1386,9 +1395,9 @@ async function generateDocumentation(apiKey: string, userDescription: string) {
     renderHeader(docFrame, componentData);
 
     try { renderWhenToUse(docFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Quando Usar', e); }
-    try { await renderAnatomy(docFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Anatomia', e); }
-    try { await renderVariants(docFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Variantes', e); }
-    try { await renderStates(docFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Estados', e); }
+    try { await renderAnatomy(docFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Anatomia', e); }
+    try { await renderVariants(docFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Variantes', e); }
+    try { await renderStates(docFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Estados', e); }
     try { await renderTokens(docFrame, componentData); } catch (e) { console.error('Erro ao renderizar Tokens', e); }
     try { await renderHierarchy(docFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Hierarquia', e); }
     try { renderApplicationRules(docFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Regras', e); }
