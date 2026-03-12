@@ -1254,89 +1254,82 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
     
     const card = createFrame(`Tokens-${title}`, {
       direction: 'VERTICAL',
-      fill: COLORS.white,
-      radius: 12,
-      padding: 24,
-      gap: 16,
-      layoutGrow: 1,
-      layoutAlign: 'STRETCH'
-    });
-    
-    const cardTitle = createText(title, 16, 'Bold', COLORS.dark);
-    card.appendChild(cardTitle);
-
-    const listFrame = createFrame('List', {
-      direction: 'VERTICAL',
       gap: 12,
       layoutAlign: 'STRETCH'
     });
+    
+    // Título da categoria (menor e sem card branco em volta por enquanto, para combinar com o print)
+    const cardTitle = createText(title, 14, 'Bold', COLORS.dark);
+    card.appendChild(cardTitle);
+
+    const listFrame = createFrame('List', {
+      direction: 'HORIZONTAL',
+      gap: 8,
+      layoutAlign: 'STRETCH'
+    });
+    listFrame.primaryAxisSizingMode = 'FIXED';
+    listFrame.layoutWrap = 'WRAP';
+    listFrame.counterAxisSpacing = 8; // Espaçamento entre linhas no wrap
 
     for (const token of list) {
-      const row = createFrame('Row', {
-        direction: 'HORIZONTAL',
-        gap: 12,
-        layoutAlign: 'STRETCH'
-      });
-      // Name Badge
-      const nameBg = createFrame('NameBg', {
+      // Token Chip Wrapper
+      const chip = createFrame('Token-Chip', {
         direction: 'HORIZONTAL',
         fill: '#F5F5F7',
         radius: 6,
-        padding: [4, 8, 4, 8],
+        padding: [6, 10, 6, 10],
+        gap: 8,
+        counterAlign: 'CENTER'
       });
-      const nameTxt = createText(token.name, 13, 'Medium', COLORS.token);
-      nameBg.appendChild(nameTxt);
-      
-      // Value Wrapper
-      const valWrapper = createFrame('ValWrapper', {
-         direction: 'HORIZONTAL',
-         layoutGrow: 1,
-         primaryAlign: 'MAX',
-         counterAlign: 'CENTER'
-      });
-      valWrapper.layoutAlign = 'STRETCH';
-      
-      // Color Preview para category Color (se resolver hexadecimal)
+      chip.strokes = [figma.util.solidPaint('#EBEBEB')];
+      chip.strokeWeight = 1;
+
+      // Color Preview para category Color
       if (token.value.startsWith('#')) {
          const colorSwatch = figma.createEllipse();
-         colorSwatch.resize(16, 16);
+         colorSwatch.resize(12, 12);
          colorSwatch.fills = [figma.util.solidPaint(token.value.split(' ')[0])];
          colorSwatch.strokes = [figma.util.solidPaint('rgba(0,0,0,0.1)')];
          colorSwatch.strokeWeight = 1;
-         valWrapper.appendChild(colorSwatch);
-         valWrapper.itemSpacing = 8;
+         chip.appendChild(colorSwatch);
       }
 
-      const valTxt = createText(token.value, 13, 'Regular', COLORS.mediumGray);
-      valWrapper.appendChild(valTxt);
+      // Compact Content: Name + Value
+      const chipText = figma.createText();
+      chipText.characters = `${token.name} — ${token.value}`;
+      chipText.fontSize = 12;
+      chipText.fontName = { family: 'Inter', style: 'Medium' };
       
-      row.appendChild(nameBg);
-      row.appendChild(valWrapper);
-      row.layoutAlign = 'STRETCH';
+      // Aplicar cores diferentes para nome e valor no chip
+      const namePart = token.name;
+      const separator = ' — ';
+      chipText.setRangeFills(0, namePart.length, [figma.util.solidPaint(COLORS.token)]);
+      chipText.setRangeFills(namePart.length, namePart.length + separator.length, [figma.util.solidPaint(COLORS.mediumGray)]);
+      chipText.setRangeFills(namePart.length + separator.length, chipText.characters.length, [figma.util.solidPaint(COLORS.value)]);
       
-      listFrame.appendChild(row);
+      chip.appendChild(chipText);
+      listFrame.appendChild(chip);
     }
 
     card.appendChild(listFrame);
     return card;
   };
 
-  const grids = createFrame('Tokens-Grids', {
-    direction: 'HORIZONTAL',
-    gap: 16,
+  const grids = createFrame('Tokens-Stack', {
+    direction: 'VERTICAL',
+    gap: 32,
     layoutAlign: 'STRETCH'
   });
-  (grids as FrameNode).primaryAxisSizingMode = 'FIXED';
-  grids.layoutAlign = 'STRETCH';
+  grids.primaryAxisSizingMode = 'AUTO';
 
-  const typeCard = createTokenList('Tipografia', tokens.typography);
   const sizeCard = createTokenList('Tamanhos', tokens.size);
   const colorCard = createTokenList('Cores', tokens.color);
+  const typeCard = createTokenList('Tipografia', tokens.typography);
 
-  // Anexa apenas se existirem
-  if (typeCard) grids.appendChild(typeCard);
+  // Anexa na ordem desejada
   if (sizeCard) grids.appendChild(sizeCard);
   if (colorCard) grids.appendChild(colorCard);
+  if (typeCard) grids.appendChild(typeCard);
 
   section.appendChild(grids);
   
@@ -1389,8 +1382,7 @@ async function generateDocumentation(apiKey: string, userDescription: string) {
 
     // Aplicar FILL horizontal em todas as seções do frame principal
     for (const child of docFrame.children) {
-      (child as any).layoutSizingHorizontal = 'FILL';
-      (child as any).layoutAlign = 'STRETCH';
+      if ('layoutAlign' in child) (child as any).layoutAlign = 'STRETCH';
     }
 
     // Posicionar ao lado do componente selecionado
