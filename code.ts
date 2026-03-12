@@ -13,6 +13,13 @@ interface ComponentData {
   states: StateInfo[];
   anatomy: AnatomyPart[];
   sizingVariants: string[];
+  tokens: ComponentTokens;
+}
+
+interface ComponentTokens {
+  typography: { name: string; value: string }[];
+  size: { name: string; value: string }[];
+  color: { name: string; value: string }[];
 }
 
 interface VariantInfo {
@@ -384,7 +391,7 @@ function createDocFrame(componentName: string): FrameNode {
 // EXTRAÇÃO DE DADOS DO COMPONENTE
 // ============================================================
 
-function extractComponentData(node: ComponentNode | ComponentSetNode | InstanceNode): ComponentData {
+async function extractComponentData(node: ComponentNode | ComponentSetNode | InstanceNode): Promise<ComponentData> {
   const data: ComponentData = {
     name: node.name.split('=').pop()?.trim() || node.name,
     nodeType: node.type,
@@ -393,6 +400,7 @@ function extractComponentData(node: ComponentNode | ComponentSetNode | InstanceN
     states: [],
     anatomy: [],
     sizingVariants: [],
+    tokens: { typography: [], size: [], color: [] },
   };
 
   // Extrair anatomia (camadas de nível 1 do componente principal)
@@ -438,6 +446,119 @@ function extractComponentData(node: ComponentNode | ComponentSetNode | InstanceN
       }
     }
   }
+
+  // --- Mapeamento de Tokens do Componente ---
+  const tokenIds = {
+    typographyStyles: new Set<string>(),
+    size: new Set<string>(),
+    color: new Set<string>(),
+  };
+
+  function collectVariables(currentNode: SceneNode) {
+    if ('boundVariables' in currentNode && currentNode.boundVariables) {
+      const bv = currentNode.boundVariables as any;
+      
+      if (currentNode.type === 'TEXT' && typeof (currentNode as TextNode).textStyleId === 'string') {
+        tokenIds.typographyStyles.add((currentNode as TextNode).textStyleId as string);
+      }
+
+      ['width', 'height', 'paddingTop', 'paddingBottom', 'paddingLeft', 'paddingRight', 'itemSpacing', 'cornerRadius', 'topLeftRadius', 'topRightRadius', 'bottomLeftRadius', 'bottomRightRadius'].forEach(prop => {
+        if (bv[prop]) tokenIds.size.add(bv[prop].id);
+      });
+
+      if (bv.fills) {
+        if (Array.isArray(bv.fills)) bv.fills.forEach((v: any) => v && tokenIds.color.add(v.id));
+        else tokenIds.color.add(bv.fills.id);
+      }
+      if (bv.strokes) {
+        if (Array.isArray(bv.strokes)) bv.strokes.forEach((v: any) => v && tokenIds.color.add(v.id));
+        else tokenIds.color.add(bv.strokes.id);
+      }
+    }
+
+    if ('children' in currentNode) {
+      for (const child of (currentNode as any).children) {
+        collectVariables(child as SceneNode);
+      }
+    }
+  }
+
+  if (node.type === 'COMPONENT_SET') {
+    for (const child of (node as ComponentSetNode).children) {
+      collectVariables(child as SceneNode);
+    }
+  } else {
+    collectVariables(node as SceneNode);
+  }
+
+  async function resolveTokens(ids: Set<string>): Promise<{name: string, value: string}[]> {
+    const result: {name: string, value: string}[] = [];
+    for (const id of Array.from(ids)) {
+      try {
+        const v = await figma.variables.getVariableByIdAsync(id);
+        if (v) {
+          const name = v.name;
+          let valStr = '';
+          const rawValues = Object.values(v.valuesByMode);
+          let rawVal = rawValues.length > 0 ? rawValues[0] : null;
+          
+          if (rawVal && typeof rawVal === 'object' && 'type' in rawVal && rawVal.type === 'VARIABLE_ALIAS') {
+             const aliasVar = await figma.variables.getVariableByIdAsync((rawVal as VariableAlias).id);
+             if (aliasVar) {
+               rawVal = Object.values(aliasVar.valuesByMode)[0];
+             }
+          }
+
+          if (v.resolvedType === 'COLOR' && rawVal && typeof rawVal === 'object' && 'r' in rawVal) {
+            const color = rawVal as RGBA;
+            valStr = rgbToHex(color);
+            if (color.a !== undefined && color.a < 1) {
+               valStr += ` (${Math.round(color.a * 100)}%)`;
+            }
+          } else if (v.resolvedType === 'FLOAT') {
+            valStr = `${rawVal}px`;
+          } else if (v.resolvedType === 'STRING') {
+            valStr = rawVal as string;
+          } else {
+            valStr = String(rawVal);
+          }
+          
+          result.push({ name, value: valStr });
+        }
+      } catch (e) {
+        // ignora token se der falha
+      }
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async function resolveTextStyles(ids: Set<string>): Promise<{name: string, value: string}[]> {
+    const result: {name: string, value: string}[] = [];
+    for (const id of Array.from(ids)) {
+      if (!id) continue;
+      try {
+        const style = await figma.getStyleByIdAsync(id) as TextStyle;
+        if (style) {
+          const name = style.name.split('/').pop() || style.name;
+          const size = style.fontSize;
+          let lhStr = 'Auto';
+          if (style.lineHeight && style.lineHeight.unit !== 'AUTO') {
+            lhStr = style.lineHeight.unit === 'PIXELS' 
+              ? `${Math.round(style.lineHeight.value)}px`
+              : `${Math.round(style.lineHeight.value)}%`;
+          }
+          result.push({ name, value: `${size} / ${lhStr}` });
+        }
+      } catch (e) {
+        // ignora erro silenciosamente
+      }
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  data.tokens.typography = await resolveTextStyles(tokenIds.typographyStyles);
+  data.tokens.size = await resolveTokens(tokenIds.size);
+  data.tokens.color = await resolveTokens(tokenIds.color);
 
   return data;
 }
@@ -1106,6 +1227,123 @@ function renderApplicationRules(parentFrame: FrameNode, aiDocs: AIDocumentation)
 }
 
 // ============================================================
+// SEÇÃO: TOKENS
+// ============================================================
+
+async function renderTokens(parentFrame: FrameNode, componentData: ComponentData) {
+  const { tokens } = componentData;
+  const hasTokens = tokens && (tokens.typography.length > 0 || tokens.size.length > 0 || tokens.color.length > 0);
+  
+  if (!hasTokens) return;
+
+  const section = createSectionFrame('Tokens');
+  section.layoutAlign = 'STRETCH';
+  
+  const intro = createText(
+    'Variáveis e tokens de design aplicados na construção deste componente e suas variantes.',
+    15,
+    'Regular',
+    COLORS.darkGray
+  );
+  intro.layoutAlign = 'STRETCH';
+  intro.textAutoResize = 'HEIGHT';
+  section.appendChild(intro);
+
+  const createTokenList = (title: string, list: {name: string, value: string}[]) => {
+    if (!list || list.length === 0) return null;
+    
+    const card = createFrame(`Tokens-${title}`, {
+      direction: 'VERTICAL',
+      fill: COLORS.white,
+      radius: 12,
+      padding: 24,
+      gap: 16,
+      layoutGrow: 1,
+      layoutAlign: 'STRETCH'
+    });
+    
+    const cardTitle = createText(title, 16, 'Bold', COLORS.dark);
+    card.appendChild(cardTitle);
+
+    const listFrame = createFrame('List', {
+      direction: 'VERTICAL',
+      gap: 12,
+      layoutAlign: 'STRETCH'
+    });
+
+    for (const token of list) {
+      const row = createFrame('Row', {
+        direction: 'HORIZONTAL',
+        gap: 12,
+        layoutAlign: 'STRETCH'
+      });
+      // Name Badge
+      const nameBg = createFrame('NameBg', {
+        direction: 'HORIZONTAL',
+        fill: '#F5F5F7',
+        radius: 6,
+        padding: [4, 8, 4, 8],
+      });
+      const nameTxt = createText(token.name, 13, 'Medium', COLORS.token);
+      nameBg.appendChild(nameTxt);
+      
+      // Value Wrapper
+      const valWrapper = createFrame('ValWrapper', {
+         direction: 'HORIZONTAL',
+         layoutGrow: 1,
+         primaryAlign: 'MAX',
+         counterAlign: 'CENTER'
+      });
+      valWrapper.layoutAlign = 'STRETCH';
+      
+      // Color Preview para category Color (se resolver hexadecimal)
+      if (token.value.startsWith('#')) {
+         const colorSwatch = figma.createEllipse();
+         colorSwatch.resize(16, 16);
+         colorSwatch.fills = [figma.util.solidPaint(token.value.split(' ')[0])];
+         colorSwatch.strokes = [figma.util.solidPaint('rgba(0,0,0,0.1)')];
+         colorSwatch.strokeWeight = 1;
+         valWrapper.appendChild(colorSwatch);
+         valWrapper.itemSpacing = 8;
+      }
+
+      const valTxt = createText(token.value, 13, 'Regular', COLORS.mediumGray);
+      valWrapper.appendChild(valTxt);
+      
+      row.appendChild(nameBg);
+      row.appendChild(valWrapper);
+      row.layoutAlign = 'STRETCH';
+      
+      listFrame.appendChild(row);
+    }
+
+    card.appendChild(listFrame);
+    return card;
+  };
+
+  const grids = createFrame('Tokens-Grids', {
+    direction: 'HORIZONTAL',
+    gap: 16,
+    layoutAlign: 'STRETCH'
+  });
+  (grids as FrameNode).primaryAxisSizingMode = 'FIXED';
+  grids.layoutAlign = 'STRETCH';
+
+  const typeCard = createTokenList('Tipografia', tokens.typography);
+  const sizeCard = createTokenList('Tamanhos', tokens.size);
+  const colorCard = createTokenList('Cores', tokens.color);
+
+  // Anexa apenas se existirem
+  if (typeCard) grids.appendChild(typeCard);
+  if (sizeCard) grids.appendChild(sizeCard);
+  if (colorCard) grids.appendChild(colorCard);
+
+  section.appendChild(grids);
+  
+  parentFrame.appendChild(section);
+}
+
+// ============================================================
 // FUNÇÃO PRINCIPAL
 // ============================================================
 
@@ -1128,7 +1366,7 @@ async function generateDocumentation(apiKey: string, userDescription: string) {
     await loadFonts();
 
     figma.ui.postMessage({ type: 'loading-step', step: 'Analisando componente...' });
-    const componentData = extractComponentData(node as ComponentNode | ComponentSetNode | InstanceNode);
+    const componentData = await extractComponentData(node as ComponentNode | ComponentSetNode | InstanceNode);
 
     figma.ui.postMessage({ type: 'loading-step', step: 'Gerando textos com Gemini...' });
     const aiDocs = await callGemini(apiKey, componentData, userDescription);
@@ -1145,6 +1383,7 @@ async function generateDocumentation(apiKey: string, userDescription: string) {
     try { await renderAnatomy(docFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Anatomia', e); }
     try { await renderVariants(docFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Variantes', e); }
     try { await renderStates(docFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Estados', e); }
+    try { await renderTokens(docFrame, componentData); } catch (e) { console.error('Erro ao renderizar Tokens', e); }
     try { await renderHierarchy(docFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Hierarquia', e); }
     try { renderApplicationRules(docFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Regras', e); }
 
