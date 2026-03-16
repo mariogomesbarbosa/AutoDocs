@@ -759,6 +759,22 @@ function renderWhenToUse(parentFrame: FrameNode, aiDocs: AIDocumentation) {
 async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentData, aiDocs: AIDocumentation, originNode: SceneNode) {
   const section = createSectionFrame('Anatomia');
   section.layoutAlign = 'STRETCH';
+  
+  // Customizações da seção "Anatomia"
+  section.paddingTop = section.paddingBottom = section.paddingLeft = section.paddingRight = 28;
+  section.itemSpacing = 24;
+  section.fills = [figma.util.solidPaint('#FFFFFF')];
+  section.cornerRadius = 12;
+
+  const titleNode = section.children[0] as TextNode;
+  if (titleNode && titleNode.type === 'TEXT') {
+    titleNode.fills = [figma.util.solidPaint(COLORS.blue)]; // #155DFC
+  }
+  const lineNode = section.children[1];
+  if (lineNode && lineNode.type === 'LINE') {
+    lineNode.remove();
+  }
+
   parentFrame.appendChild(section);
 
   const targetNode = componentData.nodeType === 'COMPONENT_SET'
@@ -777,7 +793,7 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
   // Preview com pinos
   const previewCard = createFrame('Anatomia-Preview', {
     direction: 'NONE',
-    fill: COLORS.white,
+    fill: '#E9E9E9',
     radius: 12,
     layoutGrow: 1,
     layoutAlign: 'STRETCH',
@@ -843,7 +859,7 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
   // Lista de partes
   const listCard = createFrame('Anatomia-Lista', {
     direction: 'VERTICAL',
-    fill: COLORS.white,
+    fill: 'rgba(255, 255, 255, 0)', // Transparente já que a seção agora é o card branco
     radius: 12,
     padding: 28,
     gap: 20,
