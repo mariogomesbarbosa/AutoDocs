@@ -17,9 +17,9 @@ interface ComponentData {
 }
 
 interface ComponentTokens {
-  typography: { name: string; value: string }[];
-  size: { name: string; value: string }[];
-  color: { name: string; value: string }[];
+  typography: { name: string; value: string; isAlias?: boolean; resolvedValue?: string }[];
+  size: { name: string; value: string; isAlias?: boolean; resolvedValue?: string }[];
+  color: { name: string; value: string; isAlias?: boolean; hexValue?: string; resolvedValue?: string }[];
 }
 
 interface VariantInfo {
@@ -492,21 +492,28 @@ async function extractComponentData(node: ComponentNode | ComponentSetNode | Ins
     collectVariables(node as SceneNode);
   }
 
-  async function resolveTokens(ids: Set<string>): Promise<{ name: string, value: string }[]> {
-    const result: { name: string, value: string }[] = [];
+  async function resolveTokens(ids: Set<string>): Promise<{ name: string, value: string, isAlias?: boolean, hexValue?: string, resolvedValue?: string }[]> {
+    const result: { name: string, value: string, isAlias?: boolean, hexValue?: string, resolvedValue?: string }[] = [];
     for (const id of Array.from(ids)) {
       try {
         const v = await figma.variables.getVariableByIdAsync(id);
         if (v) {
-          const name = v.name;
+          const name = v.name.split('/').pop() || v.name;
           let valStr = '';
           const rawValues = Object.values(v.valuesByMode);
           let rawVal = rawValues.length > 0 ? rawValues[0] : null;
+
+          let isAlias = false;
+          let aliasName = '';
+          let hexValue = '';
+          let resolvedValue = '';
 
           // Resolução recursiva de aliases
           while (rawVal && typeof rawVal === 'object' && 'type' in rawVal && (rawVal as any).type === 'VARIABLE_ALIAS') {
             const aliasVar = await figma.variables.getVariableByIdAsync((rawVal as VariableAlias).id);
             if (aliasVar) {
+              isAlias = true;
+              aliasName = aliasVar.name.split('/').pop() || aliasVar.name;
               rawVal = Object.values(aliasVar.valuesByMode)[0];
             } else {
               break;
@@ -515,19 +522,29 @@ async function extractComponentData(node: ComponentNode | ComponentSetNode | Ins
 
           if (v.resolvedType === 'COLOR' && rawVal && typeof rawVal === 'object' && 'r' in rawVal) {
             const color = rawVal as RGBA;
-            valStr = rgbToHex(color);
+            hexValue = rgbToHex(color);
             if (color.a !== undefined && color.a < 1) {
-              valStr += ` (${Math.round(color.a * 100)}%)`;
+              hexValue += ` (${Math.round(color.a * 100)}%)`;
             }
           } else if (v.resolvedType === 'FLOAT') {
-            valStr = `${rawVal}px`;
+            resolvedValue = `${rawVal}px`;
           } else if (v.resolvedType === 'STRING') {
-            valStr = rawVal as string;
-          } else {
-            valStr = String(rawVal);
+            resolvedValue = rawVal as string;
           }
 
-          result.push({ name, value: valStr });
+          if (isAlias) {
+            valStr = aliasName;
+          } else {
+            if (hexValue) {
+              valStr = hexValue;
+            } else if (resolvedValue) {
+              valStr = resolvedValue;
+            } else {
+              valStr = String(rawVal);
+            }
+          }
+
+          result.push({ name, value: valStr, isAlias, hexValue, resolvedValue });
         }
       } catch (e) {
         // ignora token se der falha
@@ -536,8 +553,8 @@ async function extractComponentData(node: ComponentNode | ComponentSetNode | Ins
     return result.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async function resolveTextStyles(ids: Set<string>): Promise<{ name: string, value: string }[]> {
-    const result: { name: string, value: string }[] = [];
+  async function resolveTextStyles(ids: Set<string>): Promise<{ name: string, value: string, isAlias?: boolean }[]> {
+    const result: { name: string, value: string, isAlias?: boolean }[] = [];
     for (const id of Array.from(ids)) {
       if (!id) continue;
       try {
@@ -1263,7 +1280,7 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
   intro.textAutoResize = 'HEIGHT';
   section.appendChild(intro);
 
-  const createTokenList = (title: string, list: { name: string, value: string }[]) => {
+  const createTokenList = (title: string, list: { name: string, value: string, isAlias?: boolean, hexValue?: string, resolvedValue?: string }[]) => {
     // ... logic remains same inside ...
     if (!list || list.length === 0) return null;
 
@@ -1310,10 +1327,10 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
       chip.strokeWeight = 1;
 
       // Color Preview para category Color
-      if (token.value.startsWith('#')) {
+      if (token.hexValue) {
         const colorSwatch = figma.createEllipse();
         colorSwatch.resize(14, 14);
-        colorSwatch.fills = [figma.util.solidPaint(token.value.split(' ')[0])];
+        colorSwatch.fills = [figma.util.solidPaint(token.hexValue.split(' ')[0])];
         colorSwatch.strokes = [figma.util.solidPaint('rgba(0,0,0,0.1)')];
         colorSwatch.strokeWeight = 1;
         chip.appendChild(colorSwatch);
@@ -1321,15 +1338,31 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
 
       // Content: Name + Value
       const chipText = figma.createText();
-      chipText.characters = `${token.name} — ${token.value}`;
+      const separator = token.isAlias ? '/' : ' — ';
+      
+      let displayValueStr = token.value;
+      let extraSeparator = '';
+      let extraValue = '';
+      if (title === 'Tamanhos' && token.isAlias && token.resolvedValue) {
+        extraSeparator = ' — ';
+        extraValue = token.resolvedValue;
+      }
+
+      chipText.characters = `${token.name}${separator}${displayValueStr}${extraSeparator}${extraValue}`;
       chipText.fontSize = 13;
       chipText.fontName = { family: 'Inter', style: 'Medium' };
 
       const namePart = token.name;
-      const separator = ' — ';
       chipText.setRangeFills(0, namePart.length, [figma.util.solidPaint(COLORS.token)]);
       chipText.setRangeFills(namePart.length, namePart.length + separator.length, [figma.util.solidPaint(COLORS.mediumGray)]);
-      chipText.setRangeFills(namePart.length + separator.length, chipText.characters.length, [figma.util.solidPaint(COLORS.value)]);
+      
+      const valEnd = namePart.length + separator.length + displayValueStr.length;
+      chipText.setRangeFills(namePart.length + separator.length, valEnd, [figma.util.solidPaint(token.isAlias ? COLORS.token : COLORS.value)]);
+
+      if (extraValue) {
+        chipText.setRangeFills(valEnd, valEnd + extraSeparator.length, [figma.util.solidPaint(COLORS.mediumGray)]);
+        chipText.setRangeFills(valEnd + extraSeparator.length, chipText.characters.length, [figma.util.solidPaint(COLORS.value)]);
+      }
 
       chip.appendChild(chipText);
       listFrame.appendChild(chip);
