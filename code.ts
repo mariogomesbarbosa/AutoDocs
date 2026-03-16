@@ -330,17 +330,14 @@ function createSectionFrame(titleText: string): FrameNode {
   const section = createFrame(`Seção — ${titleText}`, {
     direction: 'VERTICAL',
     gap: 24,
+    padding: 28,
+    radius: 12,
+    fill: '#FFFFFF',
     layoutAlign: 'STRETCH',
   });
 
-  const title = createText(titleText, 22, 'Bold', COLORS.dark);
+  const title = createText(titleText, 22, 'Bold', COLORS.blue);
   section.appendChild(title);
-
-  const divider = figma.createLine();
-  divider.layoutAlign = 'STRETCH';
-  divider.strokes = [figma.util.solidPaint(COLORS.lightGray)];
-  divider.strokeWeight = 1;
-  section.appendChild(divider);
 
   return section;
 }
@@ -378,7 +375,7 @@ function createDocFrame(componentName: string): FrameNode {
   const doc = createFrame(`Docs — ${componentName}`, {
     direction: 'VERTICAL',
     padding: [60, 60, 80, 60],
-    gap: 64,
+    gap: 32,
     fill: COLORS.bg,
   });
   doc.counterAxisSizingMode = 'FIXED';
@@ -759,22 +756,6 @@ function renderWhenToUse(parentFrame: FrameNode, aiDocs: AIDocumentation) {
 async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentData, aiDocs: AIDocumentation, originNode: SceneNode) {
   const section = createSectionFrame('Anatomia');
   section.layoutAlign = 'STRETCH';
-  
-  // Customizações da seção "Anatomia"
-  section.paddingTop = section.paddingBottom = section.paddingLeft = section.paddingRight = 28;
-  section.itemSpacing = 24;
-  section.fills = [figma.util.solidPaint('#FFFFFF')];
-  section.cornerRadius = 12;
-
-  const titleNode = section.children[0] as TextNode;
-  if (titleNode && titleNode.type === 'TEXT') {
-    titleNode.fills = [figma.util.solidPaint(COLORS.blue)]; // #155DFC
-  }
-  const lineNode = section.children[1];
-  if (lineNode && lineNode.type === 'LINE') {
-    lineNode.remove();
-  }
-
   parentFrame.appendChild(section);
 
   const targetNode = componentData.nodeType === 'COMPONENT_SET'
@@ -1036,12 +1017,12 @@ async function renderStates(parentFrame: FrameNode, componentData: ComponentData
   const compSet = originNode as ComponentSetNode;
 
   for (const stateGroup of componentData.states) {
-    // Card branco englobando o grupo
+    // Card englobando o grupo (agora transparente com padding 0)
     const groupCard = createFrame(`Estados-${stateGroup.variantName}`, {
       direction: 'VERTICAL',
-      fill: COLORS.white,
-      radius: 12,
-      padding: 28,
+      fill: 'rgba(255, 255, 255, 0)',
+      radius: 0,
+      padding: 0,
       gap: 20,
     });
     section.appendChild(groupCard); // ANEXA PRIMEIRO
@@ -1129,9 +1110,9 @@ async function renderHierarchy(parentFrame: FrameNode, componentData: ComponentD
   if (aiDocs.hierarchy.sizeContext && aiDocs.hierarchy.sizeContext.length > 0) {
     const subCard = createFrame('Tamanho-Contexto', {
       direction: 'VERTICAL',
-      fill: COLORS.white,
-      radius: 12,
-      padding: 28,
+      fill: 'rgba(255, 255, 255, 0)',
+      radius: 0,
+      padding: 0,
       gap: 16,
     });
     section.appendChild(subCard); // ANEXA PRIMEIRO
@@ -1306,12 +1287,12 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
       layoutAlign: 'STRETCH'
     });
 
-    // O Card Branco
+    // O Card Branco (agora transparente pois a section já é branca)
     const card = createFrame(`Tokens-${title}-Card`, {
       direction: 'VERTICAL',
-      fill: COLORS.white,
-      radius: 12,
-      padding: 24,
+      fill: 'rgba(255, 255, 255, 0)',
+      radius: 0,
+      padding: 0,
       gap: 20, // Espaço entre o título e a lista de chips
       layoutAlign: 'STRETCH'
     });
