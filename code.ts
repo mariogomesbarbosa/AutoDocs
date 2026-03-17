@@ -40,6 +40,7 @@ interface AnatomyPart {
 }
 
 interface AIDocumentation {
+  shortDescription: string;
   whenToUse: string;
   anatomy: { index: number; part: string; description: string }[];
   variants: { name: string; description: string }[];
@@ -326,21 +327,26 @@ function createBadge(num: number): FrameNode {
   return badge;
 }
 
-function createSectionFrame(titleText: string): FrameNode {
+function createSectionFrame(titleText: string, options?: { noDivider?: boolean; padding?: number; fill?: string; radius?: number }): FrameNode {
   const section = createFrame(`Seção — ${titleText}`, {
     direction: 'VERTICAL',
     gap: 24,
     layoutAlign: 'STRETCH',
+    padding: options?.padding,
+    fill: options?.fill,
+    radius: options?.radius,
   });
 
-  const title = createText(titleText, 22, 'Bold', COLORS.dark);
+  const title = createText(titleText, 22, 'Bold', COLORS.blue);
   section.appendChild(title);
 
-  const divider = figma.createLine();
-  divider.layoutAlign = 'STRETCH';
-  divider.strokes = [figma.util.solidPaint(COLORS.lightGray)];
-  divider.strokeWeight = 1;
-  section.appendChild(divider);
+  if (!options?.noDivider) {
+    const divider = figma.createLine();
+    divider.layoutAlign = 'STRETCH';
+    divider.strokes = [figma.util.solidPaint(COLORS.lightGray)];
+    divider.strokeWeight = 1;
+    section.appendChild(divider);
+  }
 
   return section;
 }
@@ -377,8 +383,8 @@ function createPreviewCard(componentNode: ComponentNode | InstanceNode): FrameNo
 function createDocFrame(componentName: string): FrameNode {
   const doc = createFrame(`Docs — ${componentName}`, {
     direction: 'VERTICAL',
-    padding: [60, 60, 80, 60],
-    gap: 64,
+    padding: 0,
+    gap: 0,
     fill: COLORS.bg,
   });
   doc.counterAxisSizingMode = 'FIXED';
@@ -609,6 +615,7 @@ Tamanhos: ${sizingText}
 
 Retorne APENAS JSON válido com esta estrutura:
 {
+  "shortDescription": "1 frase curta e objetiva descrevendo o cenário e utilidade do componente",
   "whenToUse": "1 parágrafo curto e direto (máx 3 linhas)",
   "anatomy": [{"index":1,"part":"nome","description":"frase curta sobre a função"}],
   "variants": [{"name":"nome","description":"frase curta sobre quando usar"}],
@@ -625,7 +632,7 @@ Retorne APENAS JSON válido com esta estrutura:
 
 Escreva em português brasileiro. Seja extremamente conciso.`;
 
-  const model = 'gemini-2.5-flash';
+  const model = 'gemini-3.1-flash-lite-preview';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const response = await fetch(url, {
@@ -697,25 +704,84 @@ Escreva em português brasileiro. Seja extremamente conciso.`;
 // SEÇÃO: CABEÇALHO
 // ============================================================
 
-function renderHeader(parentFrame: FrameNode, componentData: ComponentData) {
-  const header = createFrame('Cabeçalho', {
+function renderHeader(parentFrame: FrameNode, componentData: ComponentData, aiDocs: AIDocumentation) {
+  const headerCard = createFrame('Cabeçalho-Card', {
+    direction: 'HORIZONTAL',
+    fill: COLORS.white,
+    radius: 12,
+    padding: 40,
+    layoutAlign: 'STRETCH',
+    primaryAlign: 'SPACE_BETWEEN',
+    counterAlign: 'MIN',
+  });
+
+  const leftContent = createFrame('Cabeçalho-Esq', {
     direction: 'VERTICAL',
-    gap: 8,
+    gap: 24,
+    layoutAlign: 'STRETCH',
+  });
+  leftContent.layoutGrow = 1;
+
+  const textGroup = createFrame('Text-Group', {
+    direction: 'VERTICAL',
+    gap: 12,
     layoutAlign: 'STRETCH',
   });
 
   const title = createText(componentData.name, 40, 'Bold', COLORS.dark);
   title.layoutAlign = 'STRETCH';
-  header.appendChild(title);
+  textGroup.appendChild(title);
 
-  if (componentData.description) {
-    const desc = createText(componentData.description, 16, 'Regular', COLORS.mediumGray);
+  const descText = aiDocs.shortDescription || componentData.description;
+  if (descText) {
+    const desc = createText(descText, 16, 'Regular', COLORS.mediumGray);
     desc.layoutAlign = 'STRETCH';
     desc.textAutoResize = 'HEIGHT';
-    header.appendChild(desc);
+    desc.lineHeight = { value: 150, unit: 'PERCENT' };
+    textGroup.appendChild(desc);
   }
 
-  parentFrame.appendChild(header);
+  leftContent.appendChild(textGroup);
+
+  // Status Badge
+  const badgeFrame = createFrame('Status-Badge', {
+    direction: 'HORIZONTAL',
+    fill: '#E6F8EB',
+    radius: 100,
+    padding: [6, 12, 6, 10],
+    gap: 6,
+    counterAlign: 'CENTER',
+  });
+  badgeFrame.primaryAxisSizingMode = 'AUTO';
+  (badgeFrame as any).counterAxisAlignItems = 'CENTER';
+
+  const checkSvg = figma.createNodeFromSvg(`<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M7 13.5C3.41015 13.5 0.5 10.5899 0.5 7C0.5 3.41015 3.41015 0.5 7 0.5C10.5899 0.5 13.5 3.41015 13.5 7C13.5 10.5899 10.5899 13.5 7 13.5ZM7 12.5C10.0376 12.5 12.5 10.0376 12.5 7C12.5 3.96243 10.0376 1.5 7 1.5C3.96243 1.5 1.5 3.96243 1.5 7C1.5 10.0376 3.96243 12.5 7 12.5ZM9.85355 5.14645C10.0488 4.95118 10.3654 4.95118 10.5607 5.14645C10.7559 5.34171 10.7559 5.65829 10.5607 5.85355L6.35355 10.0607C6.15829 10.2559 5.84171 10.2559 5.64645 10.0607L3.64645 8.06066C3.45118 7.8654 3.45118 7.54882 3.64645 7.35355C3.84171 7.15829 4.15829 7.15829 4.35355 7.35355L6 9.00002L9.85355 5.14645Z" fill="#059669"/>
+</svg>`);
+  badgeFrame.appendChild(checkSvg);
+
+  const badgeText = createText('Conferido', 13, 'Medium', '#059669');
+  badgeFrame.appendChild(badgeText);
+
+  leftContent.appendChild(badgeFrame);
+  headerCard.appendChild(leftContent);
+
+  // Logo DSI
+  const logoFrame = createFrame('Logo', {
+    direction: 'NONE',
+    fixedWidth: 46,
+    fixedHeight: 46,
+  });
+
+  const dsiSvg = figma.createNodeFromSvg(`<svg width="46" height="46" viewBox="0 0 46 46" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M40.7126 5.28736H5.28736V40.7126H40.7126V5.28736ZM46 46H0V0H46V46Z" fill="#51A2FF"/>
+<path d="M14.4063 18.2666C15.6559 18.2667 16.7078 18.4748 17.5621 18.891C18.4163 19.2946 19.0666 19.9505 19.5128 20.8586C19.9591 21.7541 20.1822 22.946 20.1822 24.4343C20.1822 25.7392 19.9915 26.8236 19.6102 27.6876H28.5454C29.1625 27.6876 29.6659 27.1896 29.6659 26.5792C29.6659 25.9687 29.1625 25.4707 28.5454 25.4707H23.5113C21.6438 25.31 20.1822 23.7678 20.1822 21.8883C20.1822 19.9124 21.8061 18.306 23.8198 18.306H33.5796V21.0691C33.5796 21.0691 23.8259 21.069 23.8198 21.053C23.3489 21.053 22.9753 21.4385 22.9753 21.8883C22.9753 22.3381 23.3651 22.7076 23.8198 22.7076H28.5616C30.7052 22.7076 32.4591 24.4426 32.4591 26.5792C32.4591 28.7157 30.7052 30.4507 28.5454 30.4507H15.0965L15.132 30.4255C14.8982 30.4421 14.6563 30.4507 14.4063 30.4507H9.07031V18.2666H14.4063ZM36.9295 30.4507H33.5842V21.0691H36.9295V30.4507ZM12.1495 28.1047H13.9855C14.6486 28.1047 15.2032 28.0101 15.6494 27.8209C16.1085 27.6191 16.4528 27.2533 16.6823 26.7236C16.9245 26.1939 17.0457 25.4307 17.0457 24.4343C17.0457 23.4253 16.9372 22.6496 16.7205 22.1073C16.5165 21.5524 16.185 21.1677 15.726 20.9532C15.2797 20.7262 14.6996 20.6127 13.9855 20.6127H12.1495V28.1047ZM36.9284 18.3123H33.5831V15.5493H36.9284V18.3123Z" fill="#51A2FF"/>
+</svg>`);
+  logoFrame.appendChild(dsiSvg);
+
+  headerCard.appendChild(logoFrame);
+  parentFrame.appendChild(headerCard);
+  (headerCard as any).layoutSizingHorizontal = 'FILL';
 }
 
 // ============================================================
@@ -740,7 +806,12 @@ function renderWhenToUse(parentFrame: FrameNode, aiDocs: AIDocumentation) {
 // ============================================================
 
 async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentData, aiDocs: AIDocumentation, originNode: SceneNode) {
-  const section = createSectionFrame('Anatomia');
+  const section = createSectionFrame('Anatomia', {
+    noDivider: true,
+    fill: '#FFFFFF',
+    padding: 28,
+    radius: 12,
+  });
   section.layoutAlign = 'STRETCH';
   parentFrame.appendChild(section);
 
@@ -760,7 +831,7 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
   // Preview com pinos
   const previewCard = createFrame('Anatomia-Preview', {
     direction: 'NONE',
-    fill: COLORS.white,
+    fill: '#E9E9E9',
     radius: 12,
     layoutGrow: 1,
     layoutAlign: 'STRETCH',
@@ -826,9 +897,8 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
   // Lista de partes
   const listCard = createFrame('Anatomia-Lista', {
     direction: 'VERTICAL',
-    fill: COLORS.white,
-    radius: 12,
-    padding: 28,
+    // fill: COLORS.white, removido fill do filho, o parent já é branco!
+    padding: [28, 0, 0, 20], // Ajustando padding pra ficar natural com o frame exterior
     gap: 20,
     layoutGrow: 1,
     layoutAlign: 'STRETCH',
@@ -1015,7 +1085,7 @@ async function renderStates(parentFrame: FrameNode, componentData: ComponentData
     groupCard.layoutAlign = 'STRETCH';
 
     // Título do grupo
-    const groupTitle = createText(stateGroup.variantName, 15, 'Bold', COLORS.dark);
+    const groupTitle = createText(stateGroup.variantName, 15, 'Bold', COLORS.blue);
     groupCard.appendChild(groupTitle);
 
     // Linha horizontal com os estados
@@ -1104,7 +1174,7 @@ async function renderHierarchy(parentFrame: FrameNode, componentData: ComponentD
     section.appendChild(subCard); // ANEXA PRIMEIRO
     subCard.layoutAlign = 'STRETCH';
 
-    const subTitle = createText('Tamanho vs. Contexto', 16, 'Bold', COLORS.dark);
+    const subTitle = createText('Tamanho vs. Contexto', 16, 'Bold', COLORS.blue);
     subCard.appendChild(subTitle);
 
     // Header da tabela
@@ -1284,7 +1354,7 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
     });
 
     // Título da categoria (dentro do card agora)
-    const categoryTitle = createText(title, 16, 'Bold', COLORS.dark);
+    const categoryTitle = createText(title, 16, 'Bold', COLORS.blue);
     card.appendChild(categoryTitle);
 
     const listFrame = createFrame('List', {
@@ -1393,20 +1463,32 @@ async function generateDocumentation(apiKey: string, userDescription: string) {
     // Criar frame principal
     const docFrame = createDocFrame(componentData.name);
 
-    // Renderizar todas as seções, protegendo cada uma em try/catch para não quebrar a documentação inteira se uma parte falhar
-    renderHeader(docFrame, componentData);
+    // Renderizar Header no container raiz
+    renderHeader(docFrame, componentData, aiDocs);
 
-    try { renderWhenToUse(docFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Quando Usar', e); }
-    try { await renderAnatomy(docFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Anatomia', e); }
-    try { await renderVariants(docFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Variantes', e); }
-    try { await renderStates(docFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Estados', e); }
-    try { await renderTokens(docFrame, componentData); } catch (e) { console.error('Erro ao renderizar Tokens', e); }
-    try { await renderHierarchy(docFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Hierarquia', e); }
-    try { renderApplicationRules(docFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Regras', e); }
+    // Criar sub-grupo Seções (conforme nova hierarquia)
+    const sectionsFrame = createFrame('Seções', {
+      direction: 'VERTICAL',
+      padding: 60, // Top/Bottom/Left/Right = 60
+      gap: 64,
+      layoutAlign: 'STRETCH',
+    });
+    
+    // Renderizar as demais seções dentro do grupo Seções
+    try { renderWhenToUse(sectionsFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Quando Usar', e); }
+    try { await renderAnatomy(sectionsFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Anatomia', e); }
+    try { await renderVariants(sectionsFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Variantes', e); }
+    try { await renderStates(sectionsFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Estados', e); }
+    try { await renderTokens(sectionsFrame, componentData); } catch (e) { console.error('Erro ao renderizar Tokens', e); }
+    try { await renderHierarchy(sectionsFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Hierarquia', e); }
+    try { renderApplicationRules(sectionsFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Regras', e); }
 
-    // Aplicar FILL horizontal em todas as seções do frame principal
+    docFrame.appendChild(sectionsFrame);
+
+    // Aplicar FILL horizontal em todos os filhos diretos do frame principal (Header e Seções)
     for (const child of docFrame.children) {
       if ('layoutAlign' in child) (child as any).layoutAlign = 'STRETCH';
+      if ('layoutSizingHorizontal' in child) (child as any).layoutSizingHorizontal = 'FILL';
     }
 
     // Posicionar ao lado do componente selecionado
