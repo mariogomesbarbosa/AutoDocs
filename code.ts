@@ -828,20 +828,24 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
     direction: 'HORIZONTAL',
     gap: 24,
   });
-  section.appendChild(row); // Anexa antes de configurar layout complexo
+  section.appendChild(row); // Anexar PRIMEIRO para propriedades de AL funcionarem
   row.layoutAlign = 'STRETCH';
-  (row as FrameNode).primaryAxisSizingMode = 'FIXED';
+  (row as any).layoutSizingHorizontal = 'FILL';
 
   // Preview com pinos
   const previewCard = createFrame('Anatomia-Preview', {
-    direction: 'NONE',
+    direction: 'VERTICAL',
     fill: '#E9E9E9',
     radius: 12,
     layoutGrow: 1,
     layoutAlign: 'STRETCH',
+    primaryAlign: 'CENTER',
+    counterAlign: 'CENTER',
   });
-  previewCard.counterAxisSizingMode = 'FIXED';
+  row.appendChild(previewCard); // Anexar PRIMEIRO
   previewCard.resize(480, 340);
+  (previewCard as any).layoutSizingVertical = 'FIXED';
+  (previewCard as any).layoutSizingHorizontal = 'FILL';
 
   // Clonar e centralizar
   let clone: InstanceNode | SceneNode;
@@ -860,43 +864,54 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
     if ('rescale' in clone) (clone as any).rescale(scale);
   }
 
-  clone.x = Math.round((480 - clone.width) / 2);
-  clone.y = Math.round((340 - clone.height) / 2);
-  previewCard.appendChild(clone);
+  // Wrap clone + pins num frame do tamanho exato do clone
+  const innerFrame = createFrame('Anatomia-Inner', {
+    direction: 'NONE',
+  });
+  innerFrame.resize(clone.width, clone.height);
+  innerFrame.clipsContent = false;
+  innerFrame.fills = []; // transparente
+
+  clone.x = 0;
+  clone.y = 0;
+  innerFrame.appendChild(clone);
 
   // Desenhar pinos sobre partes da anatomia
   const PIN_SIZE = 22;
 
   for (const part of componentData.anatomy) {
-    // Tentar achar o nó filho correspondente
+    // Tentar achar o nó filho correspondente dentro do clone escalado
     let childNode: SceneNode | null = null;
-    if ('children' in targetNode) {
-      childNode = ((targetNode as any).children as SceneNode[]).find(c => c.name === part.layerName) || null;
+    if ('children' in clone) {
+      childNode = ((clone as any).children as SceneNode[]).find((c: any) => c.name === part.layerName) || null;
     }
 
     let pinX: number, pinY: number;
     if (childNode) {
-      // Posição relativa ao clone
-      const cx = clone.x + childNode.x * scale;
-      const cy = clone.y + childNode.y * scale;
-      const cw = childNode.width * scale;
-      const ch = childNode.height * scale;
+      // Posição relativa ao innerFrame, próxima ao filho exato
+      const cx = childNode.x;
+      const cy = childNode.y;
+      const cw = childNode.width;
+      const ch = childNode.height;
+      
       pinX = Math.round(cx + cw / 2 - PIN_SIZE / 2);
-      pinY = Math.round(cy - PIN_SIZE - 8);
-      if (pinY < 4) pinY = Math.round(cy + ch + 8);
+      pinY = Math.round(cy - PIN_SIZE - 4);
+      
+      // Se passar muito do limite superior, posicionar abaixo do elemento
+      if (pinY < -10) pinY = Math.round(cy + ch + 4);
     } else {
-      // Fallback: posição escalonada
+      // Fallback: posição escalonada no topo
       pinX = 12 + (part.index - 1) * 36;
-      pinY = 12;
+      pinY = -PIN_SIZE - 4;
     }
 
     const pin = createBadge(part.index);
-    pin.x = Math.max(4, Math.min(pinX, 480 - PIN_SIZE - 4));
-    pin.y = Math.max(4, Math.min(pinY, 340 - PIN_SIZE - 4));
-    previewCard.appendChild(pin);
+    pin.x = pinX;
+    pin.y = pinY;
+    innerFrame.appendChild(pin);
   }
 
-  row.appendChild(previewCard);
+  previewCard.appendChild(innerFrame);
 
   // Lista de partes
   const listCard = createFrame('Anatomia-Lista', {
@@ -908,6 +923,7 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
     layoutGrow: 1,
     layoutAlign: 'STRETCH',
   });
+  row.appendChild(listCard); // Anexar PRIMEIRO
 
   const listTitle = createText('Partes do componente', 14, 'Bold', COLORS.mediumGray);
   listCard.appendChild(listTitle);
@@ -918,6 +934,7 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
       gap: 12,
       layoutAlign: 'STRETCH',
     });
+    listCard.appendChild(partRow); // Anexar PRIMEIRO
     (partRow as any).counterAxisAlignItems = 'MIN';
 
     const badge = createBadge(aiPart.index);
@@ -929,6 +946,7 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
       layoutGrow: 1,
       layoutAlign: 'STRETCH',
     });
+    partRow.appendChild(textCol); // Anexar PRIMEIRO
 
     const partName = createText(aiPart.part, 14, 'Bold', COLORS.dark);
     partName.layoutAlign = 'STRETCH';
@@ -940,9 +958,6 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
     partDesc.lineHeight = { value: 150, unit: 'PERCENT' };
     textCol.appendChild(partDesc);
 
-    partRow.appendChild(textCol);
-    listCard.appendChild(partRow);
-
     // Ajuste "Fill" após os nós terem um pai auto-layout
     (partRow as any).layoutSizingHorizontal = 'FILL';
     (partRow as any).layoutAlign = 'STRETCH';
@@ -950,9 +965,6 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
     (textCol as any).layoutSizingHorizontal = 'FILL';
     (textCol as any).layoutGrow = 1;
   }
-
-  row.appendChild(listCard);
-  section.appendChild(row);
 }
 
 // ============================================================
