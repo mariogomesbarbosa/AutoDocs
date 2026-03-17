@@ -375,8 +375,8 @@ function createPreviewCard(componentNode: ComponentNode | InstanceNode): FrameNo
 function createDocFrame(componentName: string): FrameNode {
   const doc = createFrame(`Docs — ${componentName}`, {
     direction: 'VERTICAL',
-    padding: [60, 60, 80, 60],
-    gap: 32,
+    padding: 0,
+    gap: 0,
     fill: COLORS.bg,
   });
   doc.counterAxisSizingMode = 'FIXED';
@@ -624,6 +624,7 @@ Tamanhos: ${sizingText}
 
 Retorne APENAS JSON válido com esta estrutura:
 {
+  "shortDescription": "Resumo em até 2 frases sobre o objetivo e uso do componente",
   "whenToUse": "1 parágrafo curto e direto (máx 3 linhas)",
   "anatomy": [{"index":1,"part":"nome","description":"frase curta sobre a função"}],
   "variants": [{"name":"nome","description":"frase curta sobre quando usar"}],
@@ -640,7 +641,7 @@ Retorne APENAS JSON válido com esta estrutura:
 
 Escreva em português brasileiro. Seja extremamente conciso.`;
 
-  const model = 'gemini-2.5-flash';
+  const model = 'gemini-3.1-flash-lite-preview';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const response = await fetch(url, {
@@ -1486,17 +1487,27 @@ async function generateDocumentation(apiKey: string, userDescription: string) {
     // Renderizar todas as seções, protegendo cada uma em try/catch para não quebrar a documentação inteira se uma parte falhar
     renderHeader(docFrame, componentData, aiDocs);
 
-    try { renderWhenToUse(docFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Quando Usar', e); }
-    try { await renderAnatomy(docFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Anatomia', e); }
-    try { await renderVariants(docFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Variantes', e); }
-    try { await renderStates(docFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Estados', e); }
-    try { await renderTokens(docFrame, componentData); } catch (e) { console.error('Erro ao renderizar Tokens', e); }
-    try { await renderHierarchy(docFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Hierarquia', e); }
-    try { renderApplicationRules(docFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Regras', e); }
+    const sectionsFrame = createFrame('Seções', {
+      direction: 'VERTICAL',
+      gap: 64,
+      padding: 60,
+      layoutAlign: 'STRETCH',
+    });
+
+    try { renderWhenToUse(sectionsFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Quando Usar', e); }
+    try { await renderAnatomy(sectionsFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Anatomia', e); }
+    try { await renderVariants(sectionsFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Variantes', e); }
+    try { await renderStates(sectionsFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Estados', e); }
+    try { await renderTokens(sectionsFrame, componentData); } catch (e) { console.error('Erro ao renderizar Tokens', e); }
+    try { await renderHierarchy(sectionsFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Hierarquia', e); }
+    try { renderApplicationRules(sectionsFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Regras', e); }
+
+    docFrame.appendChild(sectionsFrame);
 
     // Aplicar FILL horizontal em todas as seções do frame principal
     for (const child of docFrame.children) {
       if ('layoutAlign' in child) (child as any).layoutAlign = 'STRETCH';
+      if ('layoutSizingHorizontal' in child) (child as any).layoutSizingHorizontal = 'FILL';
     }
 
     // Posicionar ao lado do componente selecionado
