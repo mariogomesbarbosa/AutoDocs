@@ -52,7 +52,9 @@ Para utilizar as funções de IA, você precisará de uma chave da API do Google
 
 ![Interface do Plugin](src/plugin-ui-screenshot.png)
 
-![Processo de Geração](src/generation-demo.mp4)
+<div align="center">
+  <video src="src/generation-demo.mp4" width="100%" controls autoplay muted loop></video>
+</div>
 
 ---
 
