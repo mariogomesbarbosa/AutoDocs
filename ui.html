@@ -4,10 +4,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DSI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
     *,
     *::before,
     *::after {
@@ -17,27 +17,28 @@
     }
 
     :root {
-      --bg: #0F0F11;
-      --surface: #1A1A20;
-      --surface-2: #22222A;
-      --border: #2E2E3A;
-      --accent: #7C6DFF;
-      --accent-hover: #9585FF;
-      --accent-glow: rgba(124, 109, 255, 0.25);
-      --text-primary: #F0F0F5;
-      --text-secondary: #8B8B9E;
-      --text-muted: #5A5A6E;
-      --success: #34D399;
-      --error: #F87171;
+      --bg: #F9FAFB;
+      --surface: #FFFFFF;
+      --surface-2: #F3F4F6;
+      --border: #E5E7EB;
+      --accent: #6366F1;
+      --accent-hover: #4F46E5;
+      --accent-glow: rgba(99, 102, 241, 0.1);
+      --text-primary: #111827;
+      --text-secondary: #4B5563;
+      --text-muted: #9CA3AF;
+      --success: #10B981;
+      --error: #EF4444;
       --radius: 10px;
       --radius-sm: 7px;
+      --shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
     }
 
     body {
       font-family: 'Inter', -apple-system, sans-serif;
       background: var(--bg);
       color: var(--text-primary);
-      width: 320px;
+      width: 100%;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
@@ -136,10 +137,12 @@
       outline: none;
       transition: border-color 0.15s, box-shadow 0.15s;
       resize: none;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
     }
 
     input[type="password"] {
-      padding-right: 76px; /* Ajustado para 2 botões */
+      padding-right: 76px;
+      /* Ajustado para 2 botões */
       letter-spacing: 0.1em;
     }
 
@@ -245,7 +248,7 @@
     .btn-generate {
       width: 100%;
       padding: 13px 20px;
-      background: linear-gradient(135deg, var(--accent), #9585FF);
+      background: var(--accent);
       border: none;
       border-radius: var(--radius);
       color: #fff;
@@ -253,8 +256,8 @@
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
-      transition: opacity 0.15s, transform 0.1s, box-shadow 0.2s;
-      box-shadow: 0 4px 20px var(--accent-glow);
+      transition: all 0.2s;
+      box-shadow: 0 4px 12px var(--accent-glow);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -371,14 +374,10 @@
         <g clip-path="url(#clip0_7379_28921)">
           <rect width="46" height="46" rx="4" fill="white" />
           <g clip-path="url(#clip1_7379_28921)">
-            <path
-              d="M40.7126 5.28736H5.28736V40.7126H40.7126V5.28736ZM46 46H0V0H46V46Z"
-              fill="#51A2FF"
-            />
+            <path d="M40.7126 5.28736H5.28736V40.7126H40.7126V5.28736ZM46 46H0V0H46V46Z" fill="#51A2FF" />
             <path
               d="M14.4063 18.2666C15.6559 18.2667 16.7078 18.4748 17.5621 18.891C18.4163 19.2946 19.0666 19.9505 19.5128 20.8586C19.9591 21.7541 20.1822 22.946 20.1822 24.4343C20.1822 25.7392 19.9915 26.8236 19.6102 27.6876H28.5454C29.1625 27.6876 29.6659 27.1896 29.6659 26.5792C29.6659 25.9687 29.1625 25.4707 28.5454 25.4707H23.5113C21.6438 25.31 20.1822 23.7678 20.1822 21.8883C20.1822 19.9124 21.8061 18.306 23.8198 18.306H33.5796V21.0691C33.5796 21.0691 23.8259 21.069 23.8198 21.053C23.3489 21.053 22.9753 21.4385 22.9753 21.8883C22.9753 22.3381 23.3651 22.7076 23.8198 22.7076H28.5616C30.7052 22.7076 32.4591 24.4426 32.4591 26.5792C32.4591 28.7157 30.7052 30.4507 28.5454 30.4507H15.0965L15.132 30.4255C14.8982 30.4421 14.6563 30.4507 14.4063 30.4507H9.07031V18.2666H14.4063ZM36.9295 30.4507H33.5842V21.0691H36.9295V30.4507ZM12.1495 28.1047H13.9855C14.6486 28.1047 15.2032 28.0101 15.6494 27.8209C16.1085 27.6191 16.4528 27.2533 16.6823 26.7236C16.9245 26.1939 17.0457 25.4307 17.0457 24.4343C17.0457 23.4253 16.9372 22.6496 16.7205 22.1073C16.5165 21.5524 16.185 21.1677 15.726 20.9532C15.2797 20.7262 14.6996 20.6127 13.9855 20.6127H12.1495V28.1047ZM36.9284 18.3123H33.5831V15.5493H36.9284V18.3123Z"
-              fill="#51A2FF"
-            />
+              fill="#51A2FF" />
           </g>
         </g>
         <defs>
@@ -447,6 +446,17 @@
       <div class="field-hint">Descreva o contexto e propósito do componente para o ChatGPT.</div>
     </div>
 
+    <!-- Storybook Link -->
+    <div class="field">
+      <label class="field-label" for="storybook-link">
+        <span class="badge"></span>
+        Link do Storybook
+      </label>
+      <input type="text" id="storybook-link" placeholder="https://storybook.exemplo.com/..."
+        style="width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); font-family: 'Inter', sans-serif; font-size: 13px; padding: 10px 12px; outline: none;" />
+      <div class="field-hint">Insira o link da documentação do Storybook para este componente.</div>
+    </div>
+
     <!-- Error -->
     <div class="error-msg" id="error-msg"></div>
 
@@ -473,7 +483,7 @@
   <!-- Footer -->
   <div class="footer">
     <span class="footer-hint">Powered by <span>Gemini</span> + Figma API</span>
-    <span class="footer-hint" id="version-tag">v2.0</span>
+    <span class="footer-hint" id="version-tag">v1.1</span>
   </div>
 
   <script>
@@ -491,7 +501,7 @@
     saveBtn.addEventListener('click', () => {
       const key = apiKeyInput.value.trim();
       parent.postMessage({ pluginMessage: { type: 'save-api-key', key } }, '*');
-      
+
       // Feedback visual
       saveBtn.classList.add('success');
       setTimeout(() => saveBtn.classList.remove('success'), 2000);
@@ -574,6 +584,7 @@
     document.getElementById('btn-generate').addEventListener('click', () => {
       const apiKey = apiKeyInput.value.trim();
       const description = document.getElementById('description').value.trim();
+      const storybookLink = document.getElementById('storybook-link').value.trim();
 
       clearError();
 
@@ -596,6 +607,7 @@
           type: 'generate',
           apiKey,
           description,
+          storybookLink,
         }
       }, '*');
     });
