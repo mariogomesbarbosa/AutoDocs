@@ -1,5 +1,5 @@
 // ============================================================
-// AutoDocs Plugin v2.0 — code.ts
+// DSI Plugin v2.0 — code.ts
 // Gera documentação estruturada de componentes Figma via ChatGPT
 // ============================================================
 
@@ -17,9 +17,9 @@ interface ComponentData {
 }
 
 interface ComponentTokens {
-  typography: { name: string; value: string }[];
-  size: { name: string; value: string }[];
-  color: { name: string; value: string }[];
+  typography: { name: string; value: string; isAlias?: boolean; resolvedValue?: string }[];
+  size: { name: string; value: string; isAlias?: boolean; resolvedValue?: string }[];
+  color: { name: string; value: string; isAlias?: boolean; hexValue?: string; resolvedValue?: string }[];
 }
 
 interface VariantInfo {
@@ -40,6 +40,7 @@ interface AnatomyPart {
 }
 
 interface AIDocumentation {
+  shortDescription: string;
   whenToUse: string;
   anatomy: { index: number; part: string; description: string }[];
   variants: { name: string; description: string }[];
@@ -330,17 +331,14 @@ function createSectionFrame(titleText: string): FrameNode {
   const section = createFrame(`Seção — ${titleText}`, {
     direction: 'VERTICAL',
     gap: 24,
+    padding: 28,
+    radius: 12,
+    fill: '#FFFFFF',
     layoutAlign: 'STRETCH',
   });
 
-  const title = createText(titleText, 22, 'Bold', COLORS.dark);
+  const title = createText(titleText, 22, 'Bold', COLORS.blue);
   section.appendChild(title);
-
-  const divider = figma.createLine();
-  divider.layoutAlign = 'STRETCH';
-  divider.strokes = [figma.util.solidPaint(COLORS.lightGray)];
-  divider.strokeWeight = 1;
-  section.appendChild(divider);
 
   return section;
 }
@@ -377,8 +375,8 @@ function createPreviewCard(componentNode: ComponentNode | InstanceNode): FrameNo
 function createDocFrame(componentName: string): FrameNode {
   const doc = createFrame(`Docs — ${componentName}`, {
     direction: 'VERTICAL',
-    padding: [60, 60, 80, 60],
-    gap: 64,
+    padding: 0,
+    gap: 0,
     fill: COLORS.bg,
   });
   doc.counterAxisSizingMode = 'FIXED';
@@ -492,21 +490,28 @@ async function extractComponentData(node: ComponentNode | ComponentSetNode | Ins
     collectVariables(node as SceneNode);
   }
 
-  async function resolveTokens(ids: Set<string>): Promise<{ name: string, value: string }[]> {
-    const result: { name: string, value: string }[] = [];
+  async function resolveTokens(ids: Set<string>): Promise<{ name: string, value: string, isAlias?: boolean, hexValue?: string, resolvedValue?: string }[]> {
+    const result: { name: string, value: string, isAlias?: boolean, hexValue?: string, resolvedValue?: string }[] = [];
     for (const id of Array.from(ids)) {
       try {
         const v = await figma.variables.getVariableByIdAsync(id);
         if (v) {
-          const name = v.name;
+          const name = v.name.split('/').pop() || v.name;
           let valStr = '';
           const rawValues = Object.values(v.valuesByMode);
           let rawVal = rawValues.length > 0 ? rawValues[0] : null;
+
+          let isAlias = false;
+          let aliasName = '';
+          let hexValue = '';
+          let resolvedValue = '';
 
           // Resolução recursiva de aliases
           while (rawVal && typeof rawVal === 'object' && 'type' in rawVal && (rawVal as any).type === 'VARIABLE_ALIAS') {
             const aliasVar = await figma.variables.getVariableByIdAsync((rawVal as VariableAlias).id);
             if (aliasVar) {
+              isAlias = true;
+              aliasName = aliasVar.name.split('/').pop() || aliasVar.name;
               rawVal = Object.values(aliasVar.valuesByMode)[0];
             } else {
               break;
@@ -515,19 +520,29 @@ async function extractComponentData(node: ComponentNode | ComponentSetNode | Ins
 
           if (v.resolvedType === 'COLOR' && rawVal && typeof rawVal === 'object' && 'r' in rawVal) {
             const color = rawVal as RGBA;
-            valStr = rgbToHex(color);
+            hexValue = rgbToHex(color);
             if (color.a !== undefined && color.a < 1) {
-              valStr += ` (${Math.round(color.a * 100)}%)`;
+              hexValue += ` (${Math.round(color.a * 100)}%)`;
             }
           } else if (v.resolvedType === 'FLOAT') {
-            valStr = `${rawVal}px`;
+            resolvedValue = `${rawVal}px`;
           } else if (v.resolvedType === 'STRING') {
-            valStr = rawVal as string;
-          } else {
-            valStr = String(rawVal);
+            resolvedValue = rawVal as string;
           }
 
-          result.push({ name, value: valStr });
+          if (isAlias) {
+            valStr = aliasName;
+          } else {
+            if (hexValue) {
+              valStr = hexValue;
+            } else if (resolvedValue) {
+              valStr = resolvedValue;
+            } else {
+              valStr = String(rawVal);
+            }
+          }
+
+          result.push({ name, value: valStr, isAlias, hexValue, resolvedValue });
         }
       } catch (e) {
         // ignora token se der falha
@@ -536,8 +551,8 @@ async function extractComponentData(node: ComponentNode | ComponentSetNode | Ins
     return result.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async function resolveTextStyles(ids: Set<string>): Promise<{ name: string, value: string }[]> {
-    const result: { name: string, value: string }[] = [];
+  async function resolveTextStyles(ids: Set<string>): Promise<{ name: string, value: string, isAlias?: boolean }[]> {
+    const result: { name: string, value: string, isAlias?: boolean }[] = [];
     for (const id of Array.from(ids)) {
       if (!id) continue;
       try {
@@ -609,6 +624,7 @@ Tamanhos: ${sizingText}
 
 Retorne APENAS JSON válido com esta estrutura:
 {
+  "shortDescription": "Resumo em até 2 frases sobre o objetivo e uso do componente",
   "whenToUse": "1 parágrafo curto e direto (máx 3 linhas)",
   "anatomy": [{"index":1,"part":"nome","description":"frase curta sobre a função"}],
   "variants": [{"name":"nome","description":"frase curta sobre quando usar"}],
@@ -625,7 +641,7 @@ Retorne APENAS JSON válido com esta estrutura:
 
 Escreva em português brasileiro. Seja extremamente conciso.`;
 
-  const model = 'gemini-2.5-flash';
+  const model = 'gemini-3.1-flash-lite-preview';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const response = await fetch(url, {
@@ -697,25 +713,170 @@ Escreva em português brasileiro. Seja extremamente conciso.`;
 // SEÇÃO: CABEÇALHO
 // ============================================================
 
-function renderHeader(parentFrame: FrameNode, componentData: ComponentData) {
-  const header = createFrame('Cabeçalho', {
+async function renderHeader(parentFrame: FrameNode, componentData: ComponentData, aiDocs: AIDocumentation) {
+  const headerCard = createFrame('Cabeçalho-Card', {
+    direction: 'HORIZONTAL',
+    fill: COLORS.white,
+    gap: 24,
+    radius: 12,
+    padding: 40,
+    layoutAlign: 'STRETCH',
+    // primaryAlign: 'SPACE_BETWEEN',
+    counterAlign: 'MIN',
+  });
+
+  const leftContent = createFrame('Cabeçalho-Esq', {
     direction: 'VERTICAL',
-    gap: 8,
+    gap: 24,
+    layoutAlign: 'STRETCH',
+  });
+  leftContent.layoutGrow = 1;
+
+  const textGroup = createFrame('Text-Group', {
+    direction: 'VERTICAL',
+    gap: 12,
     layoutAlign: 'STRETCH',
   });
 
   const title = createText(componentData.name, 40, 'Bold', COLORS.dark);
   title.layoutAlign = 'STRETCH';
-  header.appendChild(title);
+  textGroup.appendChild(title);
 
-  if (componentData.description) {
-    const desc = createText(componentData.description, 16, 'Regular', COLORS.mediumGray);
+  const descText = aiDocs.shortDescription || componentData.description;
+  if (descText) {
+    const desc = createText(descText, 16, 'Regular', COLORS.mediumGray);
     desc.layoutAlign = 'STRETCH';
     desc.textAutoResize = 'HEIGHT';
-    header.appendChild(desc);
+    desc.lineHeight = { value: 150, unit: 'PERCENT' };
+    textGroup.appendChild(desc);
   }
 
-  parentFrame.appendChild(header);
+  leftContent.appendChild(textGroup);
+
+  // ===================================
+  // Componente Customizado: Status Badge
+  // ===================================
+  // Cria um Component Set para o status na página de assets, se não existir
+  async function getOrCreateDocStatusBadge(): Promise<ComponentSetNode> {
+    await figma.loadAllPagesAsync();
+    const COMP_NAME = 'Doc-Status-Badge';
+    const existing = figma.root.findOne(n => n.name === COMP_NAME && n.type === 'COMPONENT_SET') as ComponentSetNode;
+    if (existing) {
+      existing.children.forEach(child => {
+        if (child.type === 'COMPONENT') {
+          child.primaryAxisSizingMode = 'AUTO';
+          child.counterAxisSizingMode = 'AUTO';
+        }
+      });
+      return existing;
+    }
+
+    const statuses = [
+      { status: 'Em design', bg: '#EFF6FF', color: '#1D4ED8' },        // Info
+      { status: 'Em desenvolvimento', bg: '#FEF3C7', color: '#B45309' }, // Warning
+      { status: 'Em validação', bg: '#F3E8FF', color: '#7E22CE' },     // Purple
+      { status: 'Publicado', bg: '#ECFDF5', color: '#047857' },        // Success
+    ];
+
+    const components: ComponentNode[] = [];
+    let x = 0;
+
+    for (const s of statuses) {
+      const comp = figma.createComponent();
+      comp.name = `Status=${s.status}`;
+      comp.layoutMode = 'HORIZONTAL';
+      comp.primaryAxisAlignItems = 'CENTER';
+      comp.counterAxisAlignItems = 'CENTER';
+      comp.primaryAxisSizingMode = 'AUTO';
+      comp.counterAxisSizingMode = 'AUTO';
+      comp.paddingLeft = 12;
+      comp.paddingRight = 12;
+      comp.paddingTop = 6;
+      comp.paddingBottom = 6;
+      comp.itemSpacing = 0;
+      comp.cornerRadius = 100;
+
+      comp.fills = [figma.util.solidPaint(s.bg)];
+
+      const t = createText(s.status, 13, 'Medium', s.color);
+      comp.appendChild(t);
+
+      comp.x = x;
+      components.push(comp);
+      x += comp.width + 16;
+    }
+
+    const compSet = figma.combineAsVariants(components, figma.currentPage);
+    compSet.name = COMP_NAME;
+
+    // Move para uma página de Assets para não sujar o design do usuário
+    let assetsPage = figma.root.children.find(p => p.name === '⚙️ DSI Assets');
+    if (!assetsPage) {
+      assetsPage = figma.createPage();
+      assetsPage.name = '⚙️ DSI Assets';
+    }
+    assetsPage.appendChild(compSet);
+
+    return compSet;
+  }
+
+  let badgeFrame: SceneNode;
+  try {
+    const badgeSet = await getOrCreateDocStatusBadge();
+    const inst = badgeSet.defaultVariant.createInstance();
+    inst.name = 'Status-Badge';
+    badgeFrame = inst;
+  } catch (error) {
+    console.error("Erro ao instanciar Doc-Status-Badge:", error);
+    // Fallback: renderizar o badge original manualmente
+    const fallbackFrame = createFrame('Status-Badge', {
+      direction: 'HORIZONTAL',
+      fill: '#EFF6FF',
+      radius: 100,
+      padding: [6, 12, 6, 12],
+      gap: 0,
+      counterAlign: 'CENTER',
+    });
+    fallbackFrame.primaryAxisSizingMode = 'AUTO';
+    (fallbackFrame as any).counterAxisAlignItems = 'CENTER';
+
+    const badgeText = createText('Em design', 13, 'Medium', '#1D4ED8');
+    fallbackFrame.appendChild(badgeText);
+    badgeFrame = fallbackFrame;
+  }
+
+  leftContent.appendChild(badgeFrame);
+  headerCard.appendChild(leftContent);
+
+  // Logo DSI
+  const logoFrame = createFrame('Logo', {
+    direction: 'NONE',
+    fixedWidth: 46,
+    fixedHeight: 46,
+  });
+
+  const dsiSvg = figma.createNodeFromSvg(`<svg width="46" height="46" viewBox="0 0 46 46" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_7379_28921)">
+<rect width="46" height="46" rx="4" fill="white"/>
+<g clip-path="url(#clip1_7379_28921)">
+<path d="M40.7126 5.28736H5.28736V40.7126H40.7126V5.28736ZM46 46H0V0H46V46Z" fill="#51A2FF"/>
+<path d="M14.4063 18.2666C15.6559 18.2667 16.7078 18.4748 17.5621 18.891C18.4163 19.2946 19.0666 19.9505 19.5128 20.8586C19.9591 21.7541 20.1822 22.946 20.1822 24.4343C20.1822 25.7392 19.9915 26.8236 19.6102 27.6876H28.5454C29.1625 27.6876 29.6659 27.1896 29.6659 26.5792C29.6659 25.9687 29.1625 25.4707 28.5454 25.4707H23.5113C21.6438 25.31 20.1822 23.7678 20.1822 21.8883C20.1822 19.9124 21.8061 18.306 23.8198 18.306H33.5796V21.0691C33.5796 21.0691 23.8259 21.069 23.8198 21.053C23.3489 21.053 22.9753 21.4385 22.9753 21.8883C22.9753 22.3381 23.3651 22.7076 23.8198 22.7076H28.5616C30.7052 22.7076 32.4591 24.4426 32.4591 26.5792C32.4591 28.7157 30.7052 30.4507 28.5454 30.4507H15.0965L15.132 30.4255C14.8982 30.4421 14.6563 30.4507 14.4063 30.4507H9.07031V18.2666H14.4063ZM36.9295 30.4507H33.5842V21.0691H36.9295V30.4507ZM12.1495 28.1047H13.9855C14.6486 28.1047 15.2032 28.0101 15.6494 27.8209C16.1085 27.6191 16.4528 27.2533 16.6823 26.7236C16.9245 26.1939 17.0457 25.4307 17.0457 24.4343C17.0457 23.4253 16.9372 22.6496 16.7205 22.1073C16.5165 21.5524 16.185 21.1677 15.726 20.9532C15.2797 20.7262 14.6996 20.6127 13.9855 20.6127H12.1495V28.1047ZM36.9284 18.3123H33.5831V15.5493H36.9284V18.3123Z" fill="#51A2FF"/>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_7379_28921">
+<rect width="46" height="46" rx="4" fill="white"/>
+</clipPath>
+<clipPath id="clip1_7379_28921">
+<rect width="46" height="46" fill="white"/>
+</clipPath>
+</defs>
+</svg>`);
+  logoFrame.appendChild(dsiSvg);
+
+  headerCard.appendChild(logoFrame);
+  parentFrame.appendChild(headerCard);
+  (headerCard as any).layoutSizingHorizontal = 'FILL';
 }
 
 // ============================================================
@@ -753,20 +914,24 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
     direction: 'HORIZONTAL',
     gap: 24,
   });
-  section.appendChild(row); // Anexa antes de configurar layout complexo
+  section.appendChild(row); // Anexar PRIMEIRO para propriedades de AL funcionarem
   row.layoutAlign = 'STRETCH';
-  (row as FrameNode).primaryAxisSizingMode = 'FIXED';
+  (row as any).layoutSizingHorizontal = 'FILL';
 
   // Preview com pinos
   const previewCard = createFrame('Anatomia-Preview', {
-    direction: 'NONE',
-    fill: COLORS.white,
+    direction: 'VERTICAL',
+    fill: '#E9E9E9',
     radius: 12,
     layoutGrow: 1,
     layoutAlign: 'STRETCH',
+    primaryAlign: 'CENTER',
+    counterAlign: 'CENTER',
   });
-  previewCard.counterAxisSizingMode = 'FIXED';
+  row.appendChild(previewCard); // Anexar PRIMEIRO
   previewCard.resize(480, 340);
+  (previewCard as any).layoutSizingVertical = 'FIXED';
+  (previewCard as any).layoutSizingHorizontal = 'FILL';
 
   // Clonar e centralizar
   let clone: InstanceNode | SceneNode;
@@ -785,54 +950,66 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
     if ('rescale' in clone) (clone as any).rescale(scale);
   }
 
-  clone.x = Math.round((480 - clone.width) / 2);
-  clone.y = Math.round((340 - clone.height) / 2);
-  previewCard.appendChild(clone);
+  // Wrap clone + pins num frame do tamanho exato do clone
+  const innerFrame = createFrame('Anatomia-Inner', {
+    direction: 'NONE',
+  });
+  innerFrame.resize(clone.width, clone.height);
+  innerFrame.clipsContent = false;
+  innerFrame.fills = []; // transparente
+
+  clone.x = 0;
+  clone.y = 0;
+  innerFrame.appendChild(clone);
 
   // Desenhar pinos sobre partes da anatomia
   const PIN_SIZE = 22;
 
   for (const part of componentData.anatomy) {
-    // Tentar achar o nó filho correspondente
+    // Tentar achar o nó filho correspondente dentro do clone escalado
     let childNode: SceneNode | null = null;
-    if ('children' in targetNode) {
-      childNode = ((targetNode as any).children as SceneNode[]).find(c => c.name === part.layerName) || null;
+    if ('children' in clone) {
+      childNode = ((clone as any).children as SceneNode[]).find((c: any) => c.name === part.layerName) || null;
     }
 
     let pinX: number, pinY: number;
     if (childNode) {
-      // Posição relativa ao clone
-      const cx = clone.x + childNode.x * scale;
-      const cy = clone.y + childNode.y * scale;
-      const cw = childNode.width * scale;
-      const ch = childNode.height * scale;
+      // Posição relativa ao innerFrame, próxima ao filho exato
+      const cx = childNode.x;
+      const cy = childNode.y;
+      const cw = childNode.width;
+      const ch = childNode.height;
+
       pinX = Math.round(cx + cw / 2 - PIN_SIZE / 2);
-      pinY = Math.round(cy - PIN_SIZE - 8);
-      if (pinY < 4) pinY = Math.round(cy + ch + 8);
+      pinY = Math.round(cy - PIN_SIZE - 4);
+
+      // Se passar muito do limite superior, posicionar abaixo do elemento
+      if (pinY < -10) pinY = Math.round(cy + ch + 4);
     } else {
-      // Fallback: posição escalonada
+      // Fallback: posição escalonada no topo
       pinX = 12 + (part.index - 1) * 36;
-      pinY = 12;
+      pinY = -PIN_SIZE - 4;
     }
 
     const pin = createBadge(part.index);
-    pin.x = Math.max(4, Math.min(pinX, 480 - PIN_SIZE - 4));
-    pin.y = Math.max(4, Math.min(pinY, 340 - PIN_SIZE - 4));
-    previewCard.appendChild(pin);
+    pin.x = pinX;
+    pin.y = pinY;
+    innerFrame.appendChild(pin);
   }
 
-  row.appendChild(previewCard);
+  previewCard.appendChild(innerFrame);
 
   // Lista de partes
   const listCard = createFrame('Anatomia-Lista', {
     direction: 'VERTICAL',
-    fill: COLORS.white,
+    fill: 'rgba(255, 255, 255, 0)', // Transparente já que a seção agora é o card branco
     radius: 12,
     padding: 28,
     gap: 20,
     layoutGrow: 1,
     layoutAlign: 'STRETCH',
   });
+  row.appendChild(listCard); // Anexar PRIMEIRO
 
   const listTitle = createText('Partes do componente', 14, 'Bold', COLORS.mediumGray);
   listCard.appendChild(listTitle);
@@ -843,6 +1020,7 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
       gap: 12,
       layoutAlign: 'STRETCH',
     });
+    listCard.appendChild(partRow); // Anexar PRIMEIRO
     (partRow as any).counterAxisAlignItems = 'MIN';
 
     const badge = createBadge(aiPart.index);
@@ -854,6 +1032,7 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
       layoutGrow: 1,
       layoutAlign: 'STRETCH',
     });
+    partRow.appendChild(textCol); // Anexar PRIMEIRO
 
     const partName = createText(aiPart.part, 14, 'Bold', COLORS.dark);
     partName.layoutAlign = 'STRETCH';
@@ -865,9 +1044,6 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
     partDesc.lineHeight = { value: 150, unit: 'PERCENT' };
     textCol.appendChild(partDesc);
 
-    partRow.appendChild(textCol);
-    listCard.appendChild(partRow);
-
     // Ajuste "Fill" após os nós terem um pai auto-layout
     (partRow as any).layoutSizingHorizontal = 'FILL';
     (partRow as any).layoutAlign = 'STRETCH';
@@ -875,9 +1051,6 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
     (textCol as any).layoutSizingHorizontal = 'FILL';
     (textCol as any).layoutGrow = 1;
   }
-
-  row.appendChild(listCard);
-  section.appendChild(row);
 }
 
 // ============================================================
@@ -1003,12 +1176,12 @@ async function renderStates(parentFrame: FrameNode, componentData: ComponentData
   const compSet = originNode as ComponentSetNode;
 
   for (const stateGroup of componentData.states) {
-    // Card branco englobando o grupo
+    // Card englobando o grupo (agora transparente com padding 0)
     const groupCard = createFrame(`Estados-${stateGroup.variantName}`, {
       direction: 'VERTICAL',
-      fill: COLORS.white,
-      radius: 12,
-      padding: 28,
+      fill: 'rgba(255, 255, 255, 0)',
+      radius: 0,
+      padding: 0,
       gap: 20,
     });
     section.appendChild(groupCard); // ANEXA PRIMEIRO
@@ -1096,9 +1269,9 @@ async function renderHierarchy(parentFrame: FrameNode, componentData: ComponentD
   if (aiDocs.hierarchy.sizeContext && aiDocs.hierarchy.sizeContext.length > 0) {
     const subCard = createFrame('Tamanho-Contexto', {
       direction: 'VERTICAL',
-      fill: COLORS.white,
-      radius: 12,
-      padding: 28,
+      fill: 'rgba(255, 255, 255, 0)',
+      radius: 0,
+      padding: 0,
       gap: 16,
     });
     section.appendChild(subCard); // ANEXA PRIMEIRO
@@ -1263,7 +1436,7 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
   intro.textAutoResize = 'HEIGHT';
   section.appendChild(intro);
 
-  const createTokenList = (title: string, list: { name: string, value: string }[]) => {
+  const createTokenList = (title: string, list: { name: string, value: string, isAlias?: boolean, hexValue?: string, resolvedValue?: string }[]) => {
     // ... logic remains same inside ...
     if (!list || list.length === 0) return null;
 
@@ -1273,12 +1446,12 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
       layoutAlign: 'STRETCH'
     });
 
-    // O Card Branco
+    // O Card Branco (agora transparente pois a section já é branca)
     const card = createFrame(`Tokens-${title}-Card`, {
       direction: 'VERTICAL',
-      fill: COLORS.white,
-      radius: 12,
-      padding: 24,
+      fill: 'rgba(255, 255, 255, 0)',
+      radius: 0,
+      padding: 0,
       gap: 20, // Espaço entre o título e a lista de chips
       layoutAlign: 'STRETCH'
     });
@@ -1310,10 +1483,10 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
       chip.strokeWeight = 1;
 
       // Color Preview para category Color
-      if (token.value.startsWith('#')) {
+      if (token.hexValue) {
         const colorSwatch = figma.createEllipse();
         colorSwatch.resize(14, 14);
-        colorSwatch.fills = [figma.util.solidPaint(token.value.split(' ')[0])];
+        colorSwatch.fills = [figma.util.solidPaint(token.hexValue.split(' ')[0])];
         colorSwatch.strokes = [figma.util.solidPaint('rgba(0,0,0,0.1)')];
         colorSwatch.strokeWeight = 1;
         chip.appendChild(colorSwatch);
@@ -1321,15 +1494,31 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
 
       // Content: Name + Value
       const chipText = figma.createText();
-      chipText.characters = `${token.name} — ${token.value}`;
+      const separator = token.isAlias ? '/' : ' — ';
+
+      let displayValueStr = token.value;
+      let extraSeparator = '';
+      let extraValue = '';
+      if (title === 'Tamanhos' && token.isAlias && token.resolvedValue) {
+        extraSeparator = ' — ';
+        extraValue = token.resolvedValue;
+      }
+
+      chipText.characters = `${token.name}${separator}${displayValueStr}${extraSeparator}${extraValue}`;
       chipText.fontSize = 13;
       chipText.fontName = { family: 'Inter', style: 'Medium' };
 
       const namePart = token.name;
-      const separator = ' — ';
       chipText.setRangeFills(0, namePart.length, [figma.util.solidPaint(COLORS.token)]);
       chipText.setRangeFills(namePart.length, namePart.length + separator.length, [figma.util.solidPaint(COLORS.mediumGray)]);
-      chipText.setRangeFills(namePart.length + separator.length, chipText.characters.length, [figma.util.solidPaint(COLORS.value)]);
+
+      const valEnd = namePart.length + separator.length + displayValueStr.length;
+      chipText.setRangeFills(namePart.length + separator.length, valEnd, [figma.util.solidPaint(token.isAlias ? COLORS.token : COLORS.value)]);
+
+      if (extraValue) {
+        chipText.setRangeFills(valEnd, valEnd + extraSeparator.length, [figma.util.solidPaint(COLORS.mediumGray)]);
+        chipText.setRangeFills(valEnd + extraSeparator.length, chipText.characters.length, [figma.util.solidPaint(COLORS.value)]);
+      }
 
       chip.appendChild(chipText);
       listFrame.appendChild(chip);
@@ -1394,19 +1583,29 @@ async function generateDocumentation(apiKey: string, userDescription: string) {
     const docFrame = createDocFrame(componentData.name);
 
     // Renderizar todas as seções, protegendo cada uma em try/catch para não quebrar a documentação inteira se uma parte falhar
-    renderHeader(docFrame, componentData);
+    await renderHeader(docFrame, componentData, aiDocs);
 
-    try { renderWhenToUse(docFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Quando Usar', e); }
-    try { await renderAnatomy(docFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Anatomia', e); }
-    try { await renderVariants(docFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Variantes', e); }
-    try { await renderStates(docFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Estados', e); }
-    try { await renderTokens(docFrame, componentData); } catch (e) { console.error('Erro ao renderizar Tokens', e); }
-    try { await renderHierarchy(docFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Hierarquia', e); }
-    try { renderApplicationRules(docFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Regras', e); }
+    const sectionsFrame = createFrame('Seções', {
+      direction: 'VERTICAL',
+      gap: 32,
+      padding: 60,
+      layoutAlign: 'STRETCH',
+    });
+
+    try { renderWhenToUse(sectionsFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Quando Usar', e); }
+    try { await renderAnatomy(sectionsFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Anatomia', e); }
+    try { await renderVariants(sectionsFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Variantes', e); }
+    try { await renderStates(sectionsFrame, componentData, aiDocs, node); } catch (e) { console.error('Erro ao renderizar Estados', e); }
+    try { await renderTokens(sectionsFrame, componentData); } catch (e) { console.error('Erro ao renderizar Tokens', e); }
+    try { await renderHierarchy(sectionsFrame, componentData, aiDocs); } catch (e) { console.error('Erro ao renderizar Hierarquia', e); }
+    try { renderApplicationRules(sectionsFrame, aiDocs); } catch (e) { console.error('Erro ao renderizar Regras', e); }
+
+    docFrame.appendChild(sectionsFrame);
 
     // Aplicar FILL horizontal em todas as seções do frame principal
     for (const child of docFrame.children) {
       if ('layoutAlign' in child) (child as any).layoutAlign = 'STRETCH';
+      if ('layoutSizingHorizontal' in child) (child as any).layoutSizingHorizontal = 'FILL';
     }
 
     // Posicionar ao lado do componente selecionado
