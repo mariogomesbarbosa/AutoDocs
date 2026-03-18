@@ -50,11 +50,9 @@ Para utilizar as funções de IA, você precisará de uma chave da API do Google
 
 ## 📸 Demonstração
 
-<!-- ![Interface do Plugin](src/plugin-ui-screenshot.png) -->
+![Interface do Plugin](src/plugin-ui-screenshot.png)
 
-<video src="src/generation-demo.mp4" controls width="100%"></video>
-
----
+![Assista à Demonstração](src/generation-demo.gif)
 
 ## 📐 Estrutura de Pastas
 
