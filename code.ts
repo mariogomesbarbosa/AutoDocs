@@ -9,11 +9,17 @@ interface ComponentData {
   name: string;
   nodeType: string;
   description: string;
-  variants: VariantInfo[];
+  variantProperties: VariantProperty[];
   states: StateInfo[];
   anatomy: AnatomyPart[];
   sizingVariants: string[];
   tokens: ComponentTokens;
+  variants: VariantInfo[]; // Mantido para compatibilidade se necessário, mas usaremos variantProperties
+}
+
+interface VariantProperty {
+  name: string;
+  values: string[];
 }
 
 interface ComponentTokens {
@@ -395,11 +401,12 @@ async function extractComponentData(node: ComponentNode | ComponentSetNode | Ins
     name: node.name.split('=').pop()?.trim() || node.name,
     nodeType: node.type,
     description: ('description' in node && node.description) ? node.description : '',
-    variants: [],
+    variantProperties: [],
     states: [],
     anatomy: [],
     sizingVariants: [],
     tokens: { typography: [], size: [], color: [] },
+    variants: [],
   };
 
   // Extrair anatomia (camadas de nível 1 do componente principal)
@@ -439,6 +446,11 @@ async function extractComponentData(node: ComponentNode | ComponentSetNode | Ins
       } else if (isSize) {
         data.sizingVariants = options;
       } else {
+        data.variantProperties.push({
+          name: cleanKey,
+          values: options,
+        });
+        // Mantém data.variants para retrocompatibilidade se algum outro lugar usar
         for (const opt of options) {
           data.variants.push({ name: opt, propKey: cleanKey, value: opt });
         }
@@ -600,8 +612,8 @@ async function callGemini(apiKey: string, componentData: ComponentData, userDesc
     ? anatomyList.map(p => `- Parte ${p.index}: ${p.layerName} (${p.layerType})`).join('\n')
     : 'Não identificado.';
 
-  const variantsText = variantList.length > 0
-    ? variantList.map(v => `- ${v.name}`).join('\n')
+  const variantsText = componentData.variantProperties.length > 0
+    ? componentData.variantProperties.map(p => `- ${p.name}: ${p.values.join(', ')}`).join('\n')
     : 'Nenhuma variante.';
 
   const statesText = stateList.length > 0
@@ -1117,6 +1129,61 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
 // SEÇÃO: VARIANTES
 // ============================================================
 
+// Auxiliar para encontrar uma instância de variante que melhor corresponda ao nome dado pela IA
+function findVariantInstance(compSet: ComponentSetNode, aiName: string, componentData: ComponentData): ComponentNode | null {
+  const nameLower = aiName.toLowerCase();
+  const parts = nameLower.split(/[\/\s,]+/).map(p => p.trim()).filter(p => p.length > 0);
+
+  // 1. Tentar encontrar pelo nome exato ou parte do nome (como já era feito)
+  let found = compSet.children.find(c =>
+    c.type === 'COMPONENT' && c.name.toLowerCase().includes(nameLower)
+  ) as ComponentNode | undefined;
+  if (found) return found;
+
+  // 2. Se não achou, tentar ver se aiName corresponde a uma CHAVE de propriedade (ex: "Tipo", "Color")
+  const prop = componentData.variantProperties.find(p =>
+    nameLower.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(nameLower)
+  );
+  if (prop) {
+    // Escolhe a primeira variante que tem essa propriedade definida (Figma usa Property=Value)
+    found = compSet.children.find(c =>
+      c.type === 'COMPONENT' && c.name.toLowerCase().includes(`${prop.name.toLowerCase()}=`)
+    ) as ComponentNode | undefined;
+    if (found) return found;
+  }
+
+  // 3. Tentar encontrar por qualquer uma das partes (para nomes agrupados como "Primary / Secondary")
+  for (const part of parts) {
+    if (part.length < 3) continue; // evita falsos positivos com strings curtas
+    found = compSet.children.find(c =>
+      c.type === 'COMPONENT' && c.name.toLowerCase().includes(part)
+    ) as ComponentNode | undefined;
+    if (found) return found;
+  }
+
+  // 4. Fallback: procurar nos valores das propriedades
+  for (const prop of componentData.variantProperties) {
+    for (const val of prop.values) {
+      if (nameLower.includes(val.toLowerCase())) {
+        found = compSet.children.find(c =>
+          c.type === 'COMPONENT' && c.name.toLowerCase().includes(`${prop.name.toLowerCase()}=${val.toLowerCase()}`)
+        ) as ComponentNode | undefined;
+        if (found) return found;
+      }
+    }
+  }
+
+  return null;
+}
+
+// Auxiliar para encontrar uma variante exata por par Property=Value
+function findVariantInstanceByProp(compSet: ComponentSetNode, propName: string, valueName: string): ComponentNode | null {
+  const nameToSearch = `${propName.toLowerCase()}=${valueName.toLowerCase()}`;
+  return compSet.children.find(c =>
+    c.type === 'COMPONENT' && c.name.toLowerCase().includes(nameToSearch)
+  ) as ComponentNode | null;
+}
+
 async function renderVariants(parentFrame: FrameNode, componentData: ComponentData, aiDocs: AIDocumentation, originNode: SceneNode) {
   if (aiDocs.variants.length === 0) return;
 
@@ -1124,7 +1191,6 @@ async function renderVariants(parentFrame: FrameNode, componentData: ComponentDa
   section.layoutAlign = 'STRETCH';
   parentFrame.appendChild(section);
 
-  // Descrição geral
   const intro = createText(
     'Cada variante tem uma função específica e deve ser usada de forma consistente em todos os produtos.',
     15,
@@ -1135,91 +1201,163 @@ async function renderVariants(parentFrame: FrameNode, componentData: ComponentDa
   intro.textAutoResize = 'HEIGHT';
   section.appendChild(intro);
 
-  // Stack vertical de variantes (antes era um grid horizontal)
-  const stack = createFrame('Variantes-Stack', {
-    direction: 'VERTICAL',
-    gap: 16,
-    layoutAlign: 'STRETCH',
-  });
-  stack.primaryAxisSizingMode = 'AUTO';
+  // Grid unificado que conterá todas as variantes/estados
+  const mainGrid = figma.createFrame();
+  mainGrid.name = 'Variantes-Grid';
+  mainGrid.layoutMode = 'HORIZONTAL';
+  mainGrid.layoutWrap = 'WRAP';
+  mainGrid.itemSpacing = 24;
+  mainGrid.counterAxisSpacing = 24;
+  mainGrid.layoutAlign = 'STRETCH';
+  mainGrid.primaryAxisSizingMode = 'FIXED'; // Necessário para WRAP e Fill funcionarem juntos
+  mainGrid.counterAxisSizingMode = 'AUTO';
+  section.appendChild(mainGrid);
 
   const compSet = originNode as ComponentSetNode;
+  const targetNode = componentData.nodeType === 'COMPONENT_SET'
+    ? (originNode as ComponentSetNode).defaultVariant
+    : originNode as ComponentNode | InstanceNode;
+
+  // Determinar tamanho do layout: Small (4/linha), Medium (2/linha), Large (1/linha)
+  const maxDim = Math.max(targetNode.width, targetNode.height);
+  const isSmall = maxDim < 150;
+  const isLarge = targetNode.width >= 500;
+
+  let cardWidth = 214; 
+  let cardHeight = 180;
+  let gridGap = 16;
+
+  if (isLarge) {
+    cardWidth = 904; 
+    cardHeight = 480;
+    gridGap = 24;
+  } else if (!isSmall) {
+    cardWidth = 440; 
+    cardHeight = 340;
+    gridGap = 24;
+  }
+  mainGrid.itemSpacing = gridGap;
 
   for (const varInfo of aiDocs.variants) {
-    // Row da variante: Preview (L) + Texto (R)
-    const variantRow = createFrame(`Variante-${varInfo.name}`, {
-      direction: 'HORIZONTAL',
-      gap: 16,
-      counterAlign: 'MIN',
-    });
-    stack.appendChild(variantRow); // ANEXA PRIMEIRO
-    variantRow.layoutAlign = 'STRETCH';
-    variantRow.primaryAxisSizingMode = 'AUTO';
-    (variantRow as any).layoutSizingHorizontal = 'FILL';
+    const prop = componentData.variantProperties.find(p =>
+      varInfo.name.toLowerCase().includes(p.name.toLowerCase()) ||
+      p.name.toLowerCase().includes(varInfo.name.toLowerCase())
+    );
 
-    // 1. Preview Area (Lado Esquerdo)
-    const previewArea = createFrame(`Preview-${varInfo.name}`, {
-      direction: 'VERTICAL',
-      fill: '#E9E9E9',
-      radius: 8,
-      padding: 32,
-      primaryAlign: 'CENTER',
-      counterAlign: 'CENTER',
-      layoutAlign: 'STRETCH', // Garante que estique para preencher a altura se necessário
-    });
-    previewArea.resize(440, 320); // Tamanho fixo para o preview side
-    previewArea.counterAxisSizingMode = 'FIXED';
-    previewArea.primaryAxisSizingMode = 'FIXED';
+    if (prop) {
+      for (const valName of prop.values) {
+        const itemFrame = createFrame(`Item-${valName}`, {
+          direction: 'VERTICAL',
+          gap: 12,
+        });
+        itemFrame.resize(cardWidth, cardHeight + 100); // Espaço extra para título e descrição
+        itemFrame.layoutGrow = 0;
+        mainGrid.appendChild(itemFrame);
 
-    // Encontrar e clonar componente
-    if (componentData.nodeType === 'COMPONENT_SET' && compSet?.type === 'COMPONENT_SET') {
-      const variantNode = compSet.children.find(c =>
-        c.type === 'COMPONENT' && c.name.toLowerCase().includes(varInfo.name.toLowerCase())
-      ) as ComponentNode | undefined;
+        const title = createText(valName, 18, 'Bold', COLORS.dark);
+        itemFrame.appendChild(title);
 
+        const desc = createText(varInfo.description, 14, 'Regular', COLORS.mediumGray);
+        desc.layoutAlign = 'STRETCH';
+        desc.textAutoResize = 'HEIGHT';
+        itemFrame.appendChild(desc);
+
+        const card = createFrame(`Card-${valName}`, {
+          direction: 'VERTICAL',
+          fill: '#FFFFFF',
+          radius: 8,
+          padding: 12,
+          gap: 10,
+          counterAlign: 'CENTER',
+          primaryAlign: 'CENTER',
+          fixedWidth: cardWidth,
+          fixedHeight: cardHeight,
+        });
+        card.strokes = [figma.util.solidPaint('#EBEBEB')];
+        card.strokeWeight = 1;
+        itemFrame.appendChild(card);
+
+        const previewBackground = createFrame('Preview-BG', {
+          direction: 'VERTICAL',
+          fill: '#F5F5F7',
+          radius: 4,
+          padding: 16,
+          primaryAlign: 'CENTER',
+          counterAlign: 'CENTER',
+          layoutAlign: 'STRETCH',
+        });
+        previewBackground.layoutGrow = 1;
+        card.appendChild(previewBackground);
+
+        const variantNode = findVariantInstanceByProp(compSet, prop.name, valName);
+        if (variantNode) {
+          const inst = variantNode.createInstance();
+          const MAXW = cardWidth - 40;
+          const MAXH = cardHeight - 80;
+          if (inst.width > MAXW || inst.height > MAXH) {
+            const f = Math.min(MAXW / inst.width, MAXH / inst.height);
+            if ('rescale' in inst) inst.rescale(f);
+          }
+          previewBackground.appendChild(inst);
+        }
+      }
+    } else {
+      const itemFrame = createFrame(`Item-${varInfo.name}`, {
+        direction: 'VERTICAL',
+        gap: 12,
+      });
+      itemFrame.resize(cardWidth, cardHeight + 100);
+      itemFrame.layoutGrow = 0;
+      mainGrid.appendChild(itemFrame);
+
+      const title = createText(varInfo.name, 18, 'Bold', COLORS.dark);
+      itemFrame.appendChild(title);
+
+      const desc = createText(varInfo.description, 14, 'Regular', COLORS.mediumGray);
+      desc.layoutAlign = 'STRETCH';
+      desc.textAutoResize = 'HEIGHT';
+      itemFrame.appendChild(desc);
+
+      const card = createFrame(`Card-${varInfo.name}`, {
+        direction: 'VERTICAL',
+        fill: '#FFFFFF',
+        radius: 8,
+        padding: 12,
+        gap: 10,
+        counterAlign: 'CENTER',
+        primaryAlign: 'CENTER',
+        fixedWidth: cardWidth,
+        fixedHeight: cardHeight,
+      });
+      card.strokes = [figma.util.solidPaint('#EBEBEB')];
+      card.strokeWeight = 1;
+      itemFrame.appendChild(card);
+
+      const previewBackground = createFrame('Preview-BG', {
+        direction: 'VERTICAL',
+        fill: '#F5F5F7',
+        radius: 4,
+        padding: 16,
+        primaryAlign: 'CENTER',
+        counterAlign: 'CENTER',
+        layoutAlign: 'STRETCH',
+      });
+      previewBackground.layoutGrow = 1;
+      card.appendChild(previewBackground);
+
+      const variantNode = findVariantInstance(compSet, varInfo.name, componentData);
       if (variantNode) {
         const inst = variantNode.createInstance();
-        const MAXW = 380;
-        const MAXH = 260;
+        const MAXW = cardWidth - 40;
+        const MAXH = cardHeight - 80;
         if (inst.width > MAXW || inst.height > MAXH) {
           const f = Math.min(MAXW / inst.width, MAXH / inst.height);
           if ('rescale' in inst) inst.rescale(f);
         }
-        previewArea.appendChild(inst);
-      } else {
-        const fallback = createText(varInfo.name, 14, 'Medium', COLORS.mediumGray);
-        previewArea.appendChild(fallback);
+        previewBackground.appendChild(inst);
       }
     }
-
-    // 2. Text Area (Lado Direito)
-    const textArea = createFrame(`Text-${varInfo.name}`, {
-      direction: 'VERTICAL',
-      fill: '#FFFFFF', // Nova cor solicitada (padrão branco)
-      radius: 8,       // Novo radius solicitado
-      padding: 40,
-      gap: 16,
-      layoutGrow: 1,   // Ocupa o restante do espaço
-      primaryAlign: 'CENTER',
-    });
-    textArea.layoutAlign = 'STRETCH';
-
-    const varName = createText(varInfo.name, 20, 'Bold', COLORS.dark);
-    varName.layoutAlign = 'STRETCH';
-    textArea.appendChild(varName);
-
-    const varDesc = createText(varInfo.description, 15, 'Regular', COLORS.mediumGray);
-    varDesc.layoutAlign = 'STRETCH';
-    varDesc.textAutoResize = 'HEIGHT';
-    varDesc.lineHeight = { value: 160, unit: 'PERCENT' };
-    textArea.appendChild(varDesc);
-
-    variantRow.appendChild(previewArea);
-    variantRow.appendChild(textArea);
-    stack.appendChild(variantRow);
   }
-
-  section.appendChild(stack);
 }
 
 // ============================================================
