@@ -237,9 +237,11 @@ function renderHighlightText(textNode: TextNode, fullText: string) {
 // ============================================================
 
 async function loadFonts() {
+  await figma.loadFontAsync({ family: 'Figtree', style: 'Regular' });
+  await figma.loadFontAsync({ family: 'Figtree', style: 'Medium' });
+  await figma.loadFontAsync({ family: 'Figtree', style: 'Bold' });
+  // Fallback para o default do Figma
   await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
-  await figma.loadFontAsync({ family: 'Inter', style: 'Medium' });
-  await figma.loadFontAsync({ family: 'Inter', style: 'Bold' });
 }
 
 function createText(
@@ -250,9 +252,9 @@ function createText(
   options?: { align?: TextNode['textAlignHorizontal']; layoutAlign?: 'INHERIT' | 'STRETCH' }
 ): TextNode {
   const t = figma.createText();
+  t.fontName = { family: 'Figtree', style };
   t.characters = characters;
   t.fontSize = size;
-  t.fontName = { family: 'Inter', style };
   t.fills = [figma.util.solidPaint(color)];
   if (options?.align) t.textAlignHorizontal = options.align;
   if (options?.layoutAlign) t.layoutAlign = options.layoutAlign;
@@ -368,7 +370,7 @@ function createPreviewCard(componentNode: ComponentNode | InstanceNode): FrameNo
   } else {
     clone = (componentNode as InstanceNode).clone();
   }
-  
+
   if ('clipsContent' in clone) (clone as any).clipsContent = false;
 
   const MAX = 280;
@@ -656,7 +658,7 @@ Retorne APENAS JSON válido com esta estrutura:
 
 Escreva em português brasileiro. Seja extremamente conciso.`;
 
-  const model = 'gemini-3.1-flash-lite-preview';
+  const model = 'gemini-2.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const response = await fetch(url, {
@@ -822,7 +824,7 @@ function createStorybookButton(link: string): FrameNode {
   if (link) {
     btn.setRelaunchData({ open: 'Acessar documentação no Storybook' });
     btn.setPluginData('storybookLink', link);
-    
+
     // Aplicar link nativo ao texto (Hyperlink)
     try {
       label.setRangeHyperlink(0, label.characters.length, { type: 'URL', value: link });
@@ -1018,7 +1020,7 @@ async function renderAnatomy(parentFrame: FrameNode, componentData: ComponentDat
   } else {
     clone = (targetNode as InstanceNode).clone();
   }
-  
+
   if ('clipsContent' in clone) (clone as any).clipsContent = false;
 
   const MAX = 240;
@@ -1210,15 +1212,15 @@ function findVariantWithOverrides(
 
   for (const child of compSet.children) {
     if (child.type !== 'COMPONENT') continue;
-    
+
     const cProps = (child as ComponentNode).variantProperties || {};
-    
+
     // 1. O estado (ou propriedades em 'overrides') DEVE bater obrigatoriamente
     let matchesRequired = true;
     for (const [oKey, oVal] of Object.entries(overrides)) {
       const actualPropKey = Object.keys(cProps).find(k => k.toLowerCase() === oKey.toLowerCase());
       const actualVal = actualPropKey ? cProps[actualPropKey] : null;
-      
+
       if (!actualVal || actualVal.toLowerCase() !== oVal.toLowerCase()) {
         matchesRequired = false;
         break;
@@ -1232,7 +1234,7 @@ function findVariantWithOverrides(
     for (const [targetKey, targetVal] of Object.entries(targetProperties)) {
       const actualPropKey = Object.keys(cProps).find(k => k.toLowerCase() === targetKey.toLowerCase());
       const actualVal = actualPropKey ? cProps[actualPropKey] : null;
-      
+
       if (actualVal && actualVal.toLowerCase() === targetVal.toLowerCase()) {
         currentScore++;
       }
@@ -1241,7 +1243,7 @@ function findVariantWithOverrides(
     if (currentScore > maxScore) {
       maxScore = currentScore;
       bestMatch = child as ComponentNode;
-      
+
       // Se tivermos um score perfeito (todas as props bateram), podemos parar
       if (currentScore === Object.keys(targetProperties).length) {
         return bestMatch;
@@ -1292,16 +1294,16 @@ async function renderVariants(parentFrame: FrameNode, componentData: ComponentDa
   const isSmall = maxDim < 150;
   const isLarge = targetNode.width >= 500;
 
-  let cardWidth = 214; 
+  let cardWidth = 214;
   let cardHeight = 180;
   let gridGap = 16;
 
   if (isLarge) {
-    cardWidth = 904; 
+    cardWidth = 904;
     cardHeight = 480;
     gridGap = 24;
   } else if (!isSmall) {
-    cardWidth = 440; 
+    cardWidth = 440;
     cardHeight = 340;
     gridGap = 24;
   }
@@ -1770,9 +1772,9 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
         extraValue = token.resolvedValue;
       }
 
+      chipText.fontName = { family: 'Figtree', style: 'Medium' };
       chipText.characters = `${token.name}${separator}${displayValueStr}${extraSeparator}${extraValue}`;
       chipText.fontSize = 13;
-      chipText.fontName = { family: 'Inter', style: 'Medium' };
 
       const namePart = token.name;
       chipText.setRangeFills(0, namePart.length, [figma.util.solidPaint(COLORS.token)]);

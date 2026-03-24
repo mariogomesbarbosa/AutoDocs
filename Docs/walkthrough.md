@@ -1,20 +1,28 @@
-# Walkthrough — Desabilitando Clip Content
+# Atualização de Design: Alteração da Fonte Principal
 
-Esta atualização garante que nenhum frame gerado pelo plugin AutoDocs tenha a propriedade **"Clip content"** habilitada. Isso evita que conteúdos (como sombras, badges ou elementos levemente fora da borda) fiquem escondidos nas seções da documentação.
+Nesta atualização, a fonte padrão utilizada na geração da documentação automatizada foi alterada de **Inter** para **Figtree**.
 
-## Alterações Implementadas
+## O que foi alterado:
 
-### 1. Helper `createFrame`
-O helper principal de criação de frames já possuía a configuração `clipsContent = false` por padrão. Reerifiquei e garanti que ele cubra a maioria das seções e containers do plugin.
+1.  **Carregamento de Fontes (`loadFonts`):** 
+    - A função agora carrega a família `Figtree` com os estilos `Regular`, `Medium` e `Bold`.
+    - Isso garante que o Figma disponibilize os pesos necessários antes de tentar criar os textos.
 
-### 2. Badge de Status de Documentação
-No gerador de componentes de status (`getOrCreateDocStatusBadge`), adicionei explicitamente `comp.clipsContent = false` para os componentes de status criados na página de assets.
+2.  **Criação de Textos Genéricos (`createText`):**
+    - A função base responsável por criar a maioria dos textos da documentação agora utiliza `family: 'Figtree'` por padrão.
 
-### 3. Ícones e SVGs
-Os frames gerados a partir de SVGs (como o ícone do Storybook e o Logo DSI) agora têm o `clipsContent` desabilitado logo após a criação via `figma.createNodeFromSvg`.
+3.  **Chips de Tokens (`renderTokens`):**
+    - A fonte utilizada na renderização dos nomes e valores dos tokens dentro dos chips (Labels) também foi atualizada para manter a consistência visual.
 
-### 4. Clones de Preview
-Para os previews de componentes (na seção de Anatomia e no Preview principal), adicionei uma verificação para garantir que o clone do componente também não realize o clip de conteúdo, permitindo visualizar o componente em sua totalidade.
+4.  **Correção de Ordem de Atribuição:**
+    - Foi corrigido um erro onde os caracteres eram definidos antes da fonte ser atribuída (`set_characters before loadFont`). Agora, a fonte `Figtree` é definida **antes** do conteúdo do texto.
+    - Adicionado suporte ao carregamento de `Inter Regular` como fallback de segurança, prevenindo erros ao manipular componentes que utilizem a fonte padrão do sistema Figma.
+
+## Como testar:
+
+1.  Selecione um componente no Figma.
+2.  Inicie o plugin e gere a documentação.
+3.  Verifique se os textos criados agora utilizam a fonte **Figtree**.
 
 ---
-*Gerado automaticamente para garantir a melhor visualização da documentação.*
+*Nota: Certifique-se de que a fonte Figtree está instalada no seu sistema ou disponível na sua organização do Figma para evitar erros de fonte ausente.*
