@@ -1,28 +1,30 @@
-# Atualização de Design: Alteração da Fonte Principal
+# Walkthrough — Refatoração da Estrutura de Documentação
 
-Nesta atualização, a fonte padrão utilizada na geração da documentação automatizada foi alterada de **Inter** para **Figtree**.
+## 1. Padrão Header/Content em Seções
 
-## O que foi alterado:
+Todas as seções seguem:
 
-1.  **Carregamento de Fontes (`loadFonts`):** 
-    - A função agora carrega a família `Figtree` com os estilos `Regular`, `Medium` e `Bold`.
-    - Isso garante que o Figma disponibilize os pesos necessários antes de tentar criar os textos.
+- **Frame principal** (`Seção — NOME`) → `gap: 24px`
+  - **Header** → `gap: 12px` (título + descrição)
+  - **Content** → `gap: 24px` (conteúdo específico)
 
-2.  **Criação de Textos Genéricos (`createText`):**
-    - A função base responsável por criar a maioria dos textos da documentação agora utiliza `family: 'Figtree'` por padrão.
+Seções adaptadas: *Quando usar, Anatomia, Variantes, Estados, Specs, Tokens, Hierarquia, Regras de aplicação*.
 
-3.  **Chips de Tokens (`renderTokens`):**
-    - A fonte utilizada na renderização dos nomes e valores dos tokens dentro dos chips (Labels) também foi atualizada para manter a consistência visual.
+## 2. Padrão Item-Padrão
 
-4.  **Correção de Ordem de Atribuição:**
-    - Foi corrigido um erro onde os caracteres eram definidos antes da fonte ser atribuída (`set_characters before loadFont`). Agora, a fonte `Figtree` é definida **antes** do conteúdo do texto.
-    - Adicionado suporte ao carregamento de `Inter Regular` como fallback de segurança, prevenindo erros ao manipular componentes que utilizem a fonte padrão do sistema Figma.
+Itens nas seções Variantes e Specs seguem:
 
-## Como testar:
+- **Item-Padrão** → `gap: 16px`
+  - **Header** → `gap: 8px` (título + descrição do item)
+  - **Content** → Card-Padrão com preview
 
-1.  Selecione um componente no Figma.
-2.  Inicie o plugin e gere a documentação.
-3.  Verifique se os textos criados agora utilizam a fonte **Figtree**.
+## 3. Merge da Seção Specs
+
+A função `renderSpecs` vinda da branch `main` foi adaptada ao novo padrão:
+- `createSectionFrame` retorna `{ section, header, content }` (não mais `FrameNode`)
+- Descrição é passada como parâmetro `descriptionText`
+- Grid adicionado no frame `content`
+- Itens seguem `Item-Padrão` → `Header (gap 8)` + `Content`
 
 ---
-*Nota: Certifique-se de que a fonte Figtree está instalada no seu sistema ou disponível na sua organização do Figma para evitar erros de fonte ausente.*
+*AutoDocs Plugin — 25/03/2026*
