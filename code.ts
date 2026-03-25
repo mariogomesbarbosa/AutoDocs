@@ -1,5 +1,5 @@
 // ============================================================
-// DSI Plugin v2.0 — code.ts
+// DSI Plugin v1.3 — code.ts
 // Gera documentação estruturada de componentes Figma via ChatGPT
 // ============================================================
 
