@@ -894,7 +894,7 @@ async function renderHeader(parentFrame: FrameNode, componentData: ComponentData
     layoutAlign: 'STRETCH',
   });
 
-  const title = createText(componentData.name, 40, 'Bold', COLORS.dark);
+  const title = createText(`Documentação - ${componentData.name}`, 40, 'Bold', COLORS.dark);
   title.layoutAlign = 'STRETCH';
   textGroup.appendChild(title);
 
@@ -986,14 +986,11 @@ async function renderHeader(parentFrame: FrameNode, componentData: ComponentData
 // ============================================================
 
 function renderWhenToUse(parentFrame: FrameNode, aiDocs: AIDocumentation) {
-  const { section, content } = createSectionFrame('Quando usar');
+  const { section, content } = createSectionFrame('Quando usar', aiDocs.whenToUse);
   section.layoutAlign = 'STRETCH';
 
-  const text = createText(aiDocs.whenToUse, 16, 'Regular', COLORS.darkGray);
-  text.layoutAlign = 'STRETCH';
-  text.textAutoResize = 'HEIGHT';
-  text.lineHeight = { value: 160, unit: 'PERCENT' };
-  content.appendChild(text);
+  // Seção sem Content — apenas Header (título + descrição)
+  content.remove();
 
   parentFrame.appendChild(section);
 }
@@ -1720,19 +1717,10 @@ function renderApplicationRules(parentFrame: FrameNode, aiDocs: AIDocumentation)
 // ============================================================
 
 async function renderSpecs(parentFrame: FrameNode, componentData: ComponentData, originNode: SceneNode) {
-  const section = createSectionFrame('Specs');
+  const descIntro = 'Especificações do componente, como medidas e espaçamentos.';
+  const { section, content } = createSectionFrame('Specs', descIntro);
   section.layoutAlign = 'STRETCH';
   parentFrame.appendChild(section); // Anexa primeiro para permitir Measurements na página
-
-  const intro = createText(
-    'Especificações do componente, como medidas e espaçamentos.',
-    15,
-    'Regular',
-    COLORS.darkGray
-  );
-  intro.layoutAlign = 'STRETCH';
-  intro.textAutoResize = 'HEIGHT';
-  section.appendChild(intro);
 
   const mainGrid = createFrame('Specs-Grid', {
     direction: 'HORIZONTAL',
@@ -1742,7 +1730,7 @@ async function renderSpecs(parentFrame: FrameNode, componentData: ComponentData,
   mainGrid.layoutWrap = 'WRAP';
   mainGrid.counterAxisSpacing = 24;
   mainGrid.primaryAxisSizingMode = 'FIXED';
-  section.appendChild(mainGrid);
+  content.appendChild(mainGrid);
 
   const compSet = originNode as ComponentSetNode;
   const targetNode = componentData.nodeType === 'COMPONENT_SET'
@@ -1762,24 +1750,38 @@ async function renderSpecs(parentFrame: FrameNode, componentData: ComponentData,
     : ['Default'];
 
   for (const sizeName of sizesToShow) {
-    const itemFrame = createFrame(`Item-${sizeName}`, {
+    // Padrão Item-Padrão (gap 16) → Header (gap 8) + Content
+    const itemFrame = createFrame('Item-Padrão', {
       direction: 'VERTICAL',
-      gap: 12,
+      gap: 16,
     });
-    itemFrame.resize(cardWidth, cardHeight + 100);
+    itemFrame.resize(cardWidth, cardHeight + 110);
     itemFrame.layoutGrow = 0;
     mainGrid.appendChild(itemFrame);
 
+    const itemHeader = createFrame('Header', {
+      direction: 'VERTICAL',
+      gap: 8,
+      layoutAlign: 'STRETCH',
+    });
+    itemFrame.appendChild(itemHeader);
+
     const titleStr = sizesToShow.length === 1 && sizeName === 'Default' ? 'Default' : sizeName;
     const title = createText(titleStr, 18, 'Bold', COLORS.dark);
-    itemFrame.appendChild(title);
+    itemHeader.appendChild(title);
 
     const desc = createText(`Medidas e espaçamentos do botão "${titleStr}".`, 14, 'Regular', COLORS.mediumGray);
     desc.layoutAlign = 'STRETCH';
     desc.textAutoResize = 'HEIGHT';
-    itemFrame.appendChild(desc);
+    itemHeader.appendChild(desc);
 
-    const card = createFrame(`Card-${sizeName}`, {
+    const itemContent = createFrame('Content', {
+      direction: 'VERTICAL',
+      layoutAlign: 'STRETCH',
+    });
+    itemFrame.appendChild(itemContent);
+
+    const card = createFrame('Card-Padrão', {
       direction: 'VERTICAL',
       fill: '#FFFFFF',
       radius: 8,
@@ -1792,7 +1794,7 @@ async function renderSpecs(parentFrame: FrameNode, componentData: ComponentData,
     });
     card.strokes = [figma.util.solidPaint('#EBEBEB')];
     card.strokeWeight = 1;
-    itemFrame.appendChild(card);
+    itemContent.appendChild(card);
 
     const previewBackground = createFrame('Preview-BG', {
       direction: 'VERTICAL',
@@ -1811,17 +1813,17 @@ async function renderSpecs(parentFrame: FrameNode, componentData: ComponentData,
       let sizePropName = '';
       for (const prop of componentData.variantProperties) {
         if (prop.values.map(v => v.toLowerCase()).includes(sizeName.toLowerCase())) {
-           sizePropName = prop.name; break;
+          sizePropName = prop.name; break;
         }
       }
       if (sizePropName) {
-         variantNode = findVariantInstanceByProp(compSet, sizePropName, sizeName);
+        variantNode = findVariantInstanceByProp(compSet, sizePropName, sizeName);
       }
       if (!variantNode) {
-         variantNode = findVariantInstance(compSet, sizeName, componentData);
+        variantNode = findVariantInstance(compSet, sizeName, componentData);
       }
       if (!variantNode && compSet.children.length > 0) {
-         variantNode = compSet.defaultVariant as ComponentNode;
+        variantNode = compSet.defaultVariant as ComponentNode;
       }
     } else {
       variantNode = originNode as ComponentNode;
@@ -1832,47 +1834,47 @@ async function renderSpecs(parentFrame: FrameNode, componentData: ComponentData,
       const MAXW = cardWidth - 80;
       const MAXH = cardHeight - 120;
       if (inst.width > MAXW || inst.height > MAXH) {
-         const f = Math.min(MAXW / inst.width, MAXH / inst.height);
-         if ('rescale' in inst) inst.rescale(f);
+        const f = Math.min(MAXW / inst.width, MAXH / inst.height);
+        if ('rescale' in inst) inst.rescale(f);
       }
-      
+
       // Anexa o inst à árvore do documento (necessário para a Measurement API)
       previewBackground.appendChild(inst);
-      
+
       try {
         if ('addMeasurement' in figma.currentPage) {
-           // Altura: Colado à ESQUERDA (offset OUTER negativo pode representar eixo X invertido, ou vice-versa)
-           (figma.currentPage as any).addMeasurement(
-             { node: inst, side: 'TOP' }, 
-             { node: inst, side: 'BOTTOM' },
-             { offset: { type: 'OUTER', fixed: -30 } }
-           );
-           
-           // Largura: Colado ABAIXO (offset OUTER positivo normalmente é eixo Y para baixo)
-           (figma.currentPage as any).addMeasurement(
-             { node: inst, side: 'LEFT' }, 
-             { node: inst, side: 'RIGHT' },
-             { offset: { type: 'OUTER', fixed: 30 } }
-           );
-           
-           if (inst.layoutMode !== 'NONE' && 'children' in inst && inst.children.length > 0) {
-              const firstChild = inst.children[0] as SceneNode;
-              const lastChild = inst.children[inst.children.length - 1] as SceneNode;
-              if (inst.paddingTop > 0) (figma.currentPage as any).addMeasurement({ node: inst, side: 'TOP' }, { node: firstChild, side: 'TOP' });
-              if (inst.paddingBottom > 0) (figma.currentPage as any).addMeasurement({ node: inst, side: 'BOTTOM' }, { node: lastChild, side: 'BOTTOM' });
-              if (inst.paddingLeft > 0) (figma.currentPage as any).addMeasurement({ node: inst, side: 'LEFT' }, { node: firstChild, side: 'LEFT' });
-              if (inst.paddingRight > 0) (figma.currentPage as any).addMeasurement({ node: inst, side: 'RIGHT' }, { node: lastChild, side: 'RIGHT' });
-              
-              if (inst.itemSpacing > 0 && inst.children.length > 1) {
-                 const c1 = inst.children[0] as SceneNode;
-                 const c2 = inst.children[1] as SceneNode;
-                 if (inst.layoutMode === 'HORIZONTAL') {
-                    (figma.currentPage as any).addMeasurement({ node: c1, side: 'RIGHT' }, { node: c2, side: 'LEFT' });
-                 } else {
-                    (figma.currentPage as any).addMeasurement({ node: c1, side: 'BOTTOM' }, { node: c2, side: 'TOP' });
-                 }
+          // Altura: Colado à ESQUERDA (offset OUTER negativo pode representar eixo X invertido, ou vice-versa)
+          (figma.currentPage as any).addMeasurement(
+            { node: inst, side: 'TOP' },
+            { node: inst, side: 'BOTTOM' },
+            { offset: { type: 'OUTER', fixed: -30 } }
+          );
+
+          // Largura: Colado ABAIXO (offset OUTER positivo normalmente é eixo Y para baixo)
+          (figma.currentPage as any).addMeasurement(
+            { node: inst, side: 'LEFT' },
+            { node: inst, side: 'RIGHT' },
+            { offset: { type: 'OUTER', fixed: 30 } }
+          );
+
+          if (inst.layoutMode !== 'NONE' && 'children' in inst && inst.children.length > 0) {
+            const firstChild = inst.children[0] as SceneNode;
+            const lastChild = inst.children[inst.children.length - 1] as SceneNode;
+            if (inst.paddingTop > 0) (figma.currentPage as any).addMeasurement({ node: inst, side: 'TOP' }, { node: firstChild, side: 'TOP' });
+            if (inst.paddingBottom > 0) (figma.currentPage as any).addMeasurement({ node: inst, side: 'BOTTOM' }, { node: lastChild, side: 'BOTTOM' });
+            if (inst.paddingLeft > 0) (figma.currentPage as any).addMeasurement({ node: inst, side: 'LEFT' }, { node: firstChild, side: 'LEFT' });
+            if (inst.paddingRight > 0) (figma.currentPage as any).addMeasurement({ node: inst, side: 'RIGHT' }, { node: lastChild, side: 'RIGHT' });
+
+            if (inst.itemSpacing > 0 && inst.children.length > 1) {
+              const c1 = inst.children[0] as SceneNode;
+              const c2 = inst.children[1] as SceneNode;
+              if (inst.layoutMode === 'HORIZONTAL') {
+                (figma.currentPage as any).addMeasurement({ node: c1, side: 'RIGHT' }, { node: c2, side: 'LEFT' });
+              } else {
+                (figma.currentPage as any).addMeasurement({ node: c1, side: 'BOTTOM' }, { node: c2, side: 'TOP' });
               }
-           }
+            }
+          }
         }
       } catch (e) {
         console.warn('Measurement API falhou:', e);
@@ -1991,7 +1993,7 @@ async function renderTokens(parentFrame: FrameNode, componentData: ComponentData
 
   const grids = createFrame('Tokens-Stack', {
     direction: 'VERTICAL',
-    gap: 16,
+    gap: 24,
   });
   section.appendChild(grids); // ANEXA PRIMEIRO
   grids.layoutAlign = 'STRETCH';
