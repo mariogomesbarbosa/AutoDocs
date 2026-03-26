@@ -411,6 +411,7 @@ function createDocFrame(componentName: string): FrameNode {
     padding: 0,
     gap: 0,
     fill: COLORS.bg,
+    radius: 12,
   });
   doc.counterAxisSizingMode = 'FIXED';
   doc.resize(1080, 100);
